@@ -15,9 +15,13 @@ tasks.register("assembleAllPlugins") {
             val pluginId = sub.name
             val zipTask = sub.tasks.named("pluginZip", Zip::class.java).get()
             val sourceZip = zipTask.archiveFile.get().asFile
+            val readmeFile = sub.file("README.md")
             val targetDir = outputRoot.resolve(pluginId)
             targetDir.mkdirs()
-            sourceZip.copyTo(targetDir.resolve("${pluginId}.zip"), overwrite = true)
+            sourceZip.copyTo(targetDir.resolve(sourceZip.name), overwrite = true)
+            if (readmeFile.exists()) {
+                readmeFile.copyTo(targetDir.resolve("README.md"), overwrite = true)
+            }
         }
     }
 }
