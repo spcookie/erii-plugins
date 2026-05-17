@@ -1,0 +1,12 @@
+{
+  "__desc__": {
+    "__overall__": "SeedDream plugin",
+    "token": "SeedDream API token"
+  },
+  "__value__": {
+    "token": {
+      "type": "string",
+      "default": ""
+    }
+  }
+}
