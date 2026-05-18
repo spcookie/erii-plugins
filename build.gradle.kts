@@ -25,3 +25,20 @@ tasks.register("assembleAllPlugins") {
         }
     }
 }
+
+tasks.register("buildAllPlugins") {
+    description = "Build all subproject plugins and collect into build/plugins/<id>.zip"
+
+    subprojects.forEach { sub ->
+        dependsOn(sub.tasks.named("pluginZip"))
+    }
+
+    doLast {
+        val outputRoot = layout.buildDirectory.dir("plugins").get().asFile
+        subprojects.forEach { sub ->
+            val zipTask = sub.tasks.named("pluginZip", Zip::class.java).get()
+            val sourceZip = zipTask.archiveFile.get().asFile
+            sourceZip.copyTo(outputRoot.resolve(sourceZip.name), overwrite = true)
+        }
+    }
+}
