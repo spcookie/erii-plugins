@@ -2,12 +2,11 @@ package uesugi.plugin.rollpig
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import net.mamoe.mirai.utils.ExternalResource.Companion.toExternalResource
+import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.plugin.rollpig.service.RollPigService
 import uesugi.plugin.rollpig.store.RollPigStore
 import uesugi.spi.Meta
-import uesugi.spi.getGroup
+import java.util.*
 
 object RollPigContextFactory {
 
@@ -30,16 +29,11 @@ object RollPigContextFactory {
             isAdmin = isAdmin,
             sendMessage = { msg ->
                 scope.launch {
-                    meta.getGroup().sendMessage(msg)
+                    meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), msg)
                 }
             },
             createImage = { bytes ->
-                runBlocking {
-                    val imageRes = bytes.inputStream().use { it.toExternalResource() }
-                    imageRes.use { res ->
-                        meta.getGroup().uploadImage(res)
-                    }
-                }
+                Base64.getEncoder().encodeToString(bytes)
             }
         )
     }

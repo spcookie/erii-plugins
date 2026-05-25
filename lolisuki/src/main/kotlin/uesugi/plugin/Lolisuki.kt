@@ -11,19 +11,18 @@ import kotlinx.atomicfu.AtomicBoolean
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
-import net.mamoe.mirai.contact.Contact.Companion.sendImage
-import net.mamoe.mirai.contact.Group
-import net.mamoe.mirai.utils.ExternalResource
-import net.mamoe.mirai.utils.ExternalResource.Companion.toExternalResource
 import org.pf4j.Extension
 import uesugi.common.ChatToolSet
 import uesugi.common.LLMProviderChoice
 import uesugi.common.event.PSFeature
 import uesugi.common.toolkit.calcHumanTypingDelay
 import uesugi.common.toolkit.logger
+import uesugi.onebot.sdk.client.api.sendGroupMsg
+import uesugi.onebot.sdk.message.buildMessage
 import uesugi.spi.*
 import uesugi.spi.EmptyConfig.plus
 import java.net.URL
+import java.util.*
 import kotlin.time.Duration.Companion.days
 import kotlin.time.ExperimentalTime
 
@@ -46,17 +45,16 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
 
             val state = atomic(false)
 
-            val group = meta.getGroup()
+            val groupId = meta.groupId.toLong()
 
             fun send() {
                 if (!state.value) {
                     state.value = true
                     if (image != null) {
                         log.info("由于图片未使用 Agent Tool 发送，尝试直接发送")
-                        meta.roledBot.refBot.launch {
-                            image.use {
-                                group.sendImage(image)
-                            }
+                        scope.launch {
+                            val base64 = Base64.getEncoder().encodeToString(image)
+                            meta.roledBot.refBot.sendGroupMsg(groupId, buildMessage { image("base64://$base64") })
                             log.info("图片直接发送成功")
                         }
                     } else {
@@ -71,7 +69,7 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
                     tool {
                         ImageTool(
                             image,
-                            group,
+                            groupId,
                             it,
                             state
                         )
@@ -95,9 +93,12 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
                     @LLMDescription("发送一张涩图")
                     suspend fun sendSexImage(): String {
                         val resource = getImage(MetaToolSet.meta)
-                        val group = MetaToolSet.meta.getGroup()
-                        resource?.use {
-                            group.sendImage(resource)
+                        if (resource != null) {
+                            val base64 = Base64.getEncoder().encodeToString(resource)
+                            MetaToolSet.meta.roledBot.refBot.sendGroupMsg(
+                                MetaToolSet.meta.groupId.toLong(),
+                                buildMessage { image("base64://$base64") }
+                            )
                         }
                         return "发送成功"
                     }
@@ -107,7 +108,7 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
     }
 
     @OptIn(ExperimentalTime::class)
-    suspend fun PluginContext.getImage(meta: Meta): ExternalResource? {
+    suspend fun PluginContext.getImage(meta: Meta): ByteArray? {
         val history = database.getLatestHistory(
             meta.botId,
             meta.groupId,
@@ -123,19 +124,19 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
         val prompt = prompt("提取标题、关键词") {
             user(
                 """
-                        请根据以下规则提取“当前内容”中索要的二次元/动漫图片的关键词或标签(Tag)，仅限二次元、动漫、游戏角色或风格类标签。
-                
+                        请根据以下规则提取"当前内容"中索要的二次元/动漫图片的关键词或标签(Tag)，仅限二次元、动漫、游戏角色或风格类标签。
+
                         规则：
                         1. 仅提取 **二次元图片相关标签**，如角色名、画风、类型（萌系、赛博朋克、机甲等）。
-                        2. 忽略泛泛的词语，如“涩图”“图片”“发一下”等，不要捏造。
+                        2. 忽略泛泛的词语，如"涩图""图片""发一下"等，不要捏造。
                         3. 可以提取多个关键词。
                         4. 多个关键词如果是 **AND** 语义，则是一个标签组；如果是 **OR** 语义，则是多个标签组。
                         5. 如果没有可提取的标签，返回空列表。
                         6. 历史上下文仅作为参考，帮助理解用户意图。
-                
+
                         历史上下文：
                         $ctx
-                
+
                         当前内容：
                         ${meta.input}
                         """.trimIndent()
@@ -177,7 +178,7 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
             }
             log.info("开始获取图片连接: $url")
         }.body()
-        var image: ExternalResource? = null
+        var image: ByteArray? = null
         if (node.get("code").asInt() != 0) {
             log.error("获取图片连接失败: $node")
         } else {
@@ -193,7 +194,7 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
                                 readTimeout = 60_000
                             }
                         image = connection.getInputStream().use { input ->
-                            input.toExternalResource()
+                            input.readBytes()
                         }
                     }
                     break
@@ -215,10 +216,10 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
 
         条件一：图片内容明确指向【成人 / R18】
         例如：
-        - “涩图”
-        - “R18”
-        - “黄图”
-        - “色图”
+        - "涩图"
+        - "R18"
+        - "黄图"
+        - "色图"
 
         强制排除规则：
         - 如果内容仅包含成人、性、下流、攻击性、辱骂、玩梗等文字
@@ -237,8 +238,8 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
 
     @Suppress("unused")
     inner class ImageTool(
-        val image: ExternalResource?,
-        val group: Group,
+        val image: ByteArray?,
+        val groupId: Long,
         val chatToolSet: ChatToolSet,
         val state: AtomicBoolean
     ) : MetaToolSet {
@@ -256,8 +257,9 @@ class LolisukiExtension : RouteExtension<Lolisuki> {
                         chatToolSet.sendText(listOf(v))
                     }
                 }
-                image?.use {
-                    group.sendImage(image)
+                if (image != null) {
+                    val base64 = Base64.getEncoder().encodeToString(image)
+                    MetaToolSet.meta.roledBot.refBot.sendGroupMsg(groupId, buildMessage { image("base64://$base64") })
                 }
             }
             return null

@@ -8,8 +8,9 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import net.mamoe.mirai.message.data.Face
 import org.pf4j.Extension
+import uesugi.onebot.sdk.client.api.sendGroupMsg
+import uesugi.onebot.sdk.message.buildMessage
 import uesugi.spi.*
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -159,7 +160,7 @@ class QQFaceExtension : PassiveExtension<QQFace> {
         }
 
         return try {
-            meta.getGroup().sendMessage(Face(miraiFaceId))
+            meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), buildMessage { face(miraiFaceId.toString()) })
             true
         } catch (e: Exception) {
             log.error(e) { "Failed to send face $miraiFaceId" }

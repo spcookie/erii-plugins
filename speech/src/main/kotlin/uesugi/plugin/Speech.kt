@@ -17,10 +17,12 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import net.mamoe.mirai.utils.ExternalResource.Companion.toExternalResource
 import org.pf4j.Extension
 import uesugi.common.BotManage
+import uesugi.onebot.sdk.client.api.sendGroupMsg
+import uesugi.onebot.sdk.message.buildMessage
 import uesugi.spi.*
+import java.util.*
 
 @PluginDefinition(pluginId = "speech", version = "0.0.1", description = "MiniMax TTS语音合成插件")
 class Speech : AgentPlugin()
@@ -199,19 +201,10 @@ class SpeechExtension : AgentExtension<Speech> {
         return hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     }
 
-    @Suppress("UNUSED_PARAMETER")
     private suspend fun sendVoice(meta: Meta, audioData: ByteArray): Boolean {
         return try {
-            val group = meta.getGroup()
-
-            val audio = audioData.inputStream()
-                .toExternalResource()
-                .use {
-                    group.uploadAudio(it)
-                }
-
-            group.sendMessage(audio)
-
+            val base64 = Base64.getEncoder().encodeToString(audioData)
+            meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), buildMessage { record("base64://$base64") })
             log.info { "Voice send success, audio data size: ${audioData.size}" }
             true
         } catch (e: Exception) {

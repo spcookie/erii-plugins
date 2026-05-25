@@ -1,15 +1,15 @@
 package uesugi.plugin.animal
 
 import kotlinx.coroutines.runBlocking
-import net.mamoe.mirai.utils.ExternalResource.Companion.toExternalResource
 import uesugi.common.BotManage
 import uesugi.common.toolkit.BrowserScraper
 import uesugi.common.toolkit.BrowserScraperHolder
 import uesugi.common.toolkit.ConfigHolder
+import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.Meta
-import uesugi.spi.getGroup
+import java.util.*
 
 object AnimalContextFactory {
 
@@ -38,16 +38,11 @@ object AnimalContextFactory {
             senderNick = senderNick,
             sendMessage = { msg ->
                 runBlocking {
-                    meta.getGroup().sendMessage(msg)
+                    meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), msg)
                 }
             },
             createImage = { bytes ->
-                runBlocking {
-                    val imageRes = bytes.inputStream().use { it.toExternalResource() }
-                    imageRes.use { res ->
-                        meta.getGroup().uploadImage(res)
-                    }
-                }
+                Base64.getEncoder().encodeToString(bytes)
             },
             serverUrl = "http://${externalHost}:${serverPort}${serverBasePath}",
             takeScreenshot = { url ->

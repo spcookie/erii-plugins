@@ -3,10 +3,10 @@ package uesugi.plugin.animal
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.Meta
-import uesugi.spi.getGroup
 
 class AnimalCommandHandler(
     private val store: AnimalStore,
@@ -30,7 +30,7 @@ class AnimalCommandHandler(
         return ctx.copy(
             sendMessage = { msg ->
                 scope.launch {
-                    meta.getGroup().sendMessage(msg)
+                    meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), msg)
                 }
             }
         )
