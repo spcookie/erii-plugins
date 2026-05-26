@@ -1,169 +1,135 @@
+@file:Definition(pluginId = "net-ease-music", version = "0.0.1", description = "网易云音乐插件")
+
 package uesugi.plugin
 
-import ai.koog.agents.core.tools.annotations.LLMDescription
-import ai.koog.agents.core.tools.annotations.Tool
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.http.*
-import io.ktor.server.config.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.pf4j.Extension
 import uesugi.common.BotManage
-import uesugi.common.toolkit.logger
-import uesugi.spi.*
-import uesugi.spi.MetaToolSet.Companion.meta
+import uesugi.spi.annotation.*
 
-/**
- * 网易云音乐插件
- */
-@PluginDefinition(pluginId = "net-ease-music", version = "0.0.1", description = "网易云音乐插件")
-class NetEaseMusic : AgentPlugin()
+private val log = KotlinLogging.logger {}
+private var MUSIC_API_BASE: String? = null
 
-@Extension
-class NetEaseMusicExtension : PassiveExtension<NetEaseMusic> {
+private suspend fun ensureApiBase() {
+    if (MUSIC_API_BASE == null) {
+        MUSIC_API_BASE = useConfig()().getString("api-base")
+    }
+}
 
-    private val log = logger()
+// ========== Tool ==========
 
-    companion object {
-        private lateinit var MUSIC_API_BASE: String
+@Tool
+@LLMDescription("当用户想要搜索或点播音乐时，调用此 tool 搜索音乐并发送音乐")
+suspend fun searchMusic(keyword: String, limit: Int = 5): String? {
+    log.info { "Search music keyword: $keyword" }
+    if (keyword.isBlank()) {
+        return "未提取到关键词"
     }
 
-    override fun onLoad(context: PluginContext) {
-        log.info("Loading NetEase Music plugin...")
+    ensureApiBase()
 
-        requireNotNull(
-            context.config()
-                .tryGetString("api-base")
-                ?.also { MUSIC_API_BASE = it }
-        ) {
-            "api-base is required for NetEase Music plugin"
+    var limitVal = limit
+    if (limitVal > 5) limitVal = 5
+
+    val musicCards = search(keyword, limitVal)
+    log.info { "Found ${musicCards.size} music cards for keyword: $keyword" }
+
+    return sendMusicCards(musicCards)
+}
+
+// ========== Private helpers ==========
+
+private suspend fun search(keyword: String, limit: Int = 5): List<MusicCardResult> {
+    return withContext(Dispatchers.IO) {
+        try {
+            val http = useHttp()
+            val response = http.get("$MUSIC_API_BASE/search") {
+                parameter("keywords", keyword)
+                parameter("limit", limit)
+                parameter("type", 1)
+            }
+
+            val result = response.body<MusicSearchResult>()
+
+            val songs = result.result?.songs
+            if (songs.isNullOrEmpty()) {
+                return@withContext emptyList()
+            }
+
+            songs.map { song ->
+                val musicUrl = getMusicUrl(song.id)
+                MusicCardResult.fromSong(song, musicUrl)
+            }
+        } catch (e: Exception) {
+            log.error(e) { "搜索音乐失败: ${e.message}" }
+            emptyList()
         }
-
-        context.tool { { ToolSet(context) } }
-
-        log.info("NetEase Music plugin loaded")
     }
+}
 
-    class ToolSet(val context: PluginContext) : MetaToolSet {
-
-        private val log = logger()
-
-        @Tool
-        @LLMDescription("当用户想要搜索或点播音乐时，调用此 tool 搜索音乐并发送音乐")
-        suspend fun searchMusic(keyword: String, limit: Int = 5): String {
-            log.info("Search music keyword: {}", keyword)
-            if (keyword.isBlank()) {
-                return "未提取到关键词"
+private suspend fun getMusicUrl(songId: Long): String? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val http = useHttp()
+            val response = http.get("$MUSIC_API_BASE/song/url") {
+                parameter("id", songId)
             }
 
-            var limit = limit
-            if (limit > 5) limit = 5
-
-            val musicCards = context.search(keyword, limit)
-            log.info("Found {} music cards for keyword: {}", musicCards.size, keyword)
-
-            return context.sendMusicCards(musicCards)
+            val result = response.body<MusicUrlResult>()
+            result.data?.firstOrNull()?.url
+        } catch (e: Exception) {
+            log.error(e) { "获取音乐URL失败: ${e.message}" }
+            null
         }
+    }
+}
 
-        /**
-         * 搜索音乐并返回音乐卡片列表
-         */
-        private suspend fun PluginContext.search(keyword: String, limit: Int = 5): List<MusicCardResult> {
-            return withContext(Dispatchers.IO) {
-                try {
-                    val response = http.get("$MUSIC_API_BASE/search") {
-                        parameter("keywords", keyword)
-                        parameter("limit", limit)
-                        parameter("type", 1)
-                    }
+private suspend fun sendMusicCards(musicCards: List<MusicCardResult>): String? {
+    val meta = useToolMeta().value
+    val config = useConfig()
+    val configKey = BotManage.getConfigKey(meta.botId)
+    val cfg = config().getConfig("onebot.$configKey")
+    val httpUrl = cfg.getString("http-url")
+    val token = cfg.getString("token")!!.let { config.findEnv(it)!! }
+    val http = useHttp()
 
-                    val result = response.body<MusicSearchResult>()
-
-                    val songs = result.result?.songs
-                    if (songs.isNullOrEmpty()) {
-                        return@withContext emptyList()
-                    }
-
-                    // 为每首歌曲创建音乐卡片
-                    songs.map { song ->
-                        val musicUrl = getMusicUrl(song.id)
-                        MusicCardResult.fromSong(song, musicUrl)
-                    }
-                } catch (e: Exception) {
-                    log.error("搜索音乐失败: {}", e.message, e)
-                    emptyList()
-                }
-            }
-        }
-
-        /**
-         * 根据歌曲ID获取音乐URL
-         */
-        private suspend fun PluginContext.getMusicUrl(songId: Long): String? {
-            return withContext(Dispatchers.IO) {
-                try {
-                    val response = http.get("$MUSIC_API_BASE/song/url") {
-                        parameter("id", songId)
-                    }
-
-                    val result = response.body<MusicUrlResult>()
-                    result.data?.firstOrNull()?.url
-                } catch (e: Exception) {
-                    log.error("获取音乐URL失败: {}", e.message, e)
-                    null
-                }
-            }
-        }
-
-        private suspend fun PluginContext.sendMusicCards(musicCards: List<MusicCardResult>): String {
-            val configKey = BotManage.getConfigKey(meta.botId)
-            val cfg = config().getConfig("onebot.$configKey")
-            val httpUrl = cfg.getString("http-url")
-            val token = cfg.getString("token")!!.let {
-                config.findEnv(it)!!
-            }
-            for (cardResult in musicCards) {
-                try {
-                    context.http.post("$httpUrl/send_msg") {
-                        bearerAuth(token)
-                        contentType(ContentType.Application.Json)
-                        setBody(
+    for (cardResult in musicCards) {
+        try {
+            http.post("$httpUrl/send_msg") {
+                bearerAuth(token)
+                contentType(ContentType.Application.Json)
+                setBody(
+                    mapOf(
+                        "message_type" to "group",
+                        "group_id" to meta.groupId,
+                        "message" to listOf(
                             mapOf(
-                                "message_type" to "group",
-                                "group_id" to meta.groupId,
-                                "message" to listOf(
-                                    mapOf(
-                                        "type" to "music",
-                                        "data" to mapOf(
-                                            "type" to "163",
-                                            "id" to cardResult.id
-                                        )
-                                    )
+                                "type" to "music",
+                                "data" to mapOf(
+                                    "type" to "163",
+                                    "id" to cardResult.id
                                 )
                             )
                         )
-                    }
-                } catch (e: Exception) {
-                    log.error("发送音乐卡片失败: {}", e.message, e)
-                    return "发送音乐卡片失败: ${e.message}"
-                }
+                    )
+                )
             }
-            return "已发送音乐卡片"
+        } catch (e: Exception) {
+            log.error(e) { "发送音乐卡片失败: ${e.message}" }
+            return "发送音乐卡片失败: ${e.message}"
         }
     }
-
-    override fun onUnload() {
-        log.info("NetEase Music plugin unloaded")
-    }
-
+    return "已发送音乐卡片"
 }
 
-/**
- * 音乐搜索结果
- */
+// ========== Data classes ==========
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MusicSearchResult(
     @field:JsonProperty("result") val result: SearchResult? = null
@@ -202,30 +168,18 @@ data class Album(
     @field:JsonProperty("publishTime") val publishTime: Long? = null
 )
 
-/**
- * 音乐卡片结果 - 用于生成网易云音乐卡片消息
- */
 data class MusicCardResult(
     val id: Long,
-    /** 消息卡片标题. */
     val title: String,
-    /** 消息卡片内容. */
     val summary: String,
-    /** 点击卡片跳转网页 URL. */
     val jumpUrl: String,
-    /** 消息卡片图片 URL. */
     val pictureUrl: String,
-    /** 音乐文件 URL. */
     val musicUrl: String,
-    /** 在消息列表显示. */
     val brief: String
 ) {
     companion object {
         private const val NETEASE_BASE_URL = "https://music.163.com"
 
-        /**
-         * 从 Song 对象创建 MusicCardResult
-         */
         fun fromSong(song: Song, musicUrl: String? = null): MusicCardResult {
             val artists = song.artists?.joinToString("/") { it.name } ?: "未知歌手"
             val musicUrlFinal = musicUrl ?: "$NETEASE_BASE_URL/song/media/outer/url?id=${song.id}"
@@ -243,9 +197,6 @@ data class MusicCardResult(
     }
 }
 
-/**
- * 音乐URL查询响应
- */
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MusicUrlResult(
     @field:JsonProperty("code") val code: Int = 0,
