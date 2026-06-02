@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>聊天活跃热力图</title>
+<style>
+{{calHeatmapCss}}
+</style>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:#faf8f5;display:flex;align-items:center;justify-content:center;min-height:100vh;
+    font-family:Charter,'Iowan Old Style',Georgia,'Times New Roman',serif;color:#2c2c2c;-webkit-font-smoothing:antialiased}
+  .page{width:820px;background:#fffef9;padding:56px 64px 48px;box-shadow:0 1px 4px rgba(0,0,0,.04),0 8px 32px rgba(0,0,0,.06)}
+  .kicker{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:10px;
+    text-transform:uppercase;letter-spacing:2.5px;color:#a09080;margin-bottom:16px}
+  .headline{font-size:36px;font-weight:400;line-height:1.15;letter-spacing:-.01em;color:#1a1a1a}
+  .headline strong{font-weight:600}
+  .dek{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:14px;
+    line-height:1.6;color:#6b6b6b;margin-top:12px;max-width:480px}
+  .divider{width:40px;height:1px;background:#d4c8bc;margin:28px 0 32px}
+  .stats-print{display:flex;gap:48px;margin-bottom:40px}
+  .stat-item{display:flex;flex-direction:column}
+  .stat-item .label{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:10px;
+    text-transform:uppercase;letter-spacing:1.2px;color:#a09080;margin-bottom:6px}
+  .stat-item .value{font-size:42px;font-weight:400;line-height:1;color:#1a1a1a}
+  .stat-item .value .unit{font-size:16px;color:#b0a090;font-weight:400;margin-left:3px}
+  .rank-note{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:13px;
+    color:#6b6b6b;line-height:1.6;margin-top:4px}
+  .rank-note em{font-family:Charter,'Iowan Old Style',Georgia,serif;font-style:normal;font-size:24px;
+    font-weight:600;color:#b08840;margin-right:2px}
+  .section-label{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:9px;
+    text-transform:uppercase;letter-spacing:2px;color:#a09080;margin-bottom:10px}
+  .heatmap-frame{border:1px solid #e8e0d8;padding:12px 14px 10px;background:#fefcf8}
+  .heatmap-frame .ch-container{margin:0 auto}
+  .heatmap-footer{display:flex;justify-content:flex-end;align-items:center;gap:5px;margin-top:10px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:9px;color:#c8b8a8}
+  .legend-swatch{display:flex;gap:3px}
+  .legend-swatch div{width:11px;height:11px;border-radius:1px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">聊天数据回顾</div>
+  <h1 class="headline"><strong>{{nickname}}</strong>的年度活跃足迹</h1>
+  <p class="dek">{{startDate}} — {{endDate}}，52 周发言追踪。</p>
+  <div class="divider"></div>
+  <div class="stats-print">
+    <div class="stat-item"><span class="label">全年总字数</span>
+      <span class="value">{{totalWords}}<span class="unit">字</span></span></div>
+    <div class="stat-item"><span class="label">最近一日</span>
+      <span class="value">{{todayWords}}<span class="unit">字</span></span></div>
+    {{rankSection}}
+  </div>
+  <div class="section-label">每日发言量分布</div>
+  <div class="heatmap-frame">
+    <div id="heatmapContainer"></div>
+    <div class="heatmap-footer">
+      <span>少</span><div class="legend-swatch" id="legendSwatch"></div><span>多</span>
+    </div>
+  </div>
+</div>
+<script>{{d3js}}</script>
+<script>{{calHeatmapJs}}</script>
+<script>
+(function(){
+var colors={{colors}};
+var data={{dailyCounts}};
+var sd=new Date("{{startDateJs}}-01");
+var ed=new Date("{{endDateJs}}-01");
+ed=new Date(ed.getFullYear(),ed.getMonth()+1,0);
+var vals=Object.values(data),max=vals.length?Math.max.apply(null,vals):0;
+var domain=max===0?[0,1,2,3,4]:[0,1,Math.ceil(max*.25),Math.ceil(max*.5),Math.ceil(max*.75)];
+var leg=document.getElementById('legendSwatch');
+colors.forEach(function(c){var d=document.createElement('div');d.style.backgroundColor=c;leg.appendChild(d)});
+var cal=new CalHeatmap();
+cal.paint({
+  data:{source:data,x:'date',y:'value'},
+  date:{start:sd},
+  range:12,
+  scale:{color:{type:'threshold',range:colors,domain:domain}},
+  domain:{type:'month',gutter:10,label:{text:'MMM',textAlign:'start',position:'top',offset:{y:-2}}},
+  subDomain:{type:'day',radius:2,width:12,height:12,gutter:3},
+  itemSelector:'#heatmapContainer'
+});
+})();
+</script>
+</body>
+</html>

@@ -17,6 +17,7 @@ rootProject.name = "erii-plugins"
 
 include("lolisuki")
 include("animal")
+include("chat-heatmap")
 include("net-ease-music")
 include("qq-face")
 include("rollpig")
