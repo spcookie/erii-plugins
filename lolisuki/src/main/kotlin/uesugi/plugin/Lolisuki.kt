@@ -103,7 +103,7 @@ suspend fun lolisukiRoute(meta: Meta) {
 // ========== Tool ==========
 
 @Tool(set = "lolisuki")
-@ai.koog.agents.core.tools.annotations.LLMDescription("发送一张涩图")
+@LLMDescription("发送一张涩图")
 suspend fun sendSexImage(): String {
     val meta = useToolMeta().value
     val resource = getImage(meta)
@@ -127,9 +127,9 @@ class ImageTool(
     val state: AtomicBoolean
 ) : MetaToolSet {
 
-    @ai.koog.agents.core.tools.annotations.LLMDescription("回复消息，并发送涩图")
-    @ai.koog.agents.core.tools.annotations.Tool
-    fun sendMessageAndImage(@ai.koog.agents.core.tools.annotations.LLMDescription("回复 2～3 句为主，最多 5 句") sentences: List<String>): String? {
+    @LLMDescription("回复消息，并发送涩图")
+    @Tool
+    fun sendMessageAndImage(@LLMDescription("回复 2～3 句为主，最多 5 句") sentences: List<String>): String? {
         state.value = true
         scope.launch {
             for ((i, v) in sentences.withIndex()) {
