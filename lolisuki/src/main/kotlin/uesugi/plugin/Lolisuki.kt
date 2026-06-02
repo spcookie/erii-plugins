@@ -2,6 +2,8 @@
 
 package uesugi.plugin
 
+import ai.koog.agents.core.tools.annotations.LLMDescription
+import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.executeStructured
 import com.fasterxml.jackson.databind.JsonNode
@@ -102,8 +104,8 @@ suspend fun lolisukiRoute(meta: Meta) {
 
 // ========== Tool ==========
 
-@Tool(set = "lolisuki")
-@LLMDescription("发送一张涩图")
+@LLMTool(set = "lolisuki")
+@LLMDesc("发送一张涩图")
 suspend fun sendSexImage(): String {
     val meta = useToolMeta().value
     val resource = getImage(meta)

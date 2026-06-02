@@ -272,7 +272,7 @@ suspend fun seeddreamRoute(meta: Meta) {
 
 // ========== Tool ==========
 
-@Tool(set = "seeddream")
+@LLMTool(set = "seeddream")
 @ai.koog.agents.core.tools.annotations.LLMDescription("生成一张图片发送")
 suspend fun imageCreate(): String? {
     val meta = useToolMeta().value

@@ -54,14 +54,14 @@ object ScopesSerializer : KSerializer<Language> {
 
 // ========== Tool ==========
 
-@Tool
-@LLMDescription(
+@LLMTool
+@LLMDesc(
     """
     发送语音。当需要发送语音消息或者需要"说"时使用此工具。
     """
 )
 suspend fun sendSpeech(
-    @LLMDescription(
+    @LLMDesc(
         """
         要转换为语音的文本内容，长度不超过10000字符
         段落切换用换行符标记
@@ -76,11 +76,11 @@ suspend fun sendSpeech(
         """
     )
     text: String,
-    @LLMDescription("语言：chinese(中文)、english(英文)、japanese(日语)，默认为chinese")
+    @LLMDesc("语言：chinese(中文)、english(英文)、japanese(日语)，默认为chinese")
     language: Language = Language.CHINESE,
-    @LLMDescription("语速，0.5-2.0，默认为1.0")
+    @LLMDesc("语速，0.5-2.0，默认为1.0")
     speed: Float = 1.0f,
-    @LLMDescription("情绪：happy(高兴)、sad(悲伤)、angry(愤怒)、fearful(害怕)、disgusted(厌恶)、surprised(惊讶)、calm(中性)，默认为calm")
+    @LLMDesc("情绪：happy(高兴)、sad(悲伤)、angry(愤怒)、fearful(害怕)、disgusted(厌恶)、surprised(惊讶)、calm(中性)，默认为calm")
     emotion: String = "calm"
 ): String? {
     return try {

@@ -54,7 +54,7 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
                     store,
                     service,
                     serverPort,
-                    context.server.basePath,
+                    context.server.url.pathSegments.joinToString("/", "/"),
                 )
             }
         }
@@ -66,7 +66,7 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
                 store = store,
                 service = service,
                 serverPort = serverPort,
-                serverBasePath = context.server.basePath,
+                serverBasePath = context.server.url.pathSegments.joinToString("/", "/"),
                 scope = scope
             ).handleWithError(meta) { ctx ->
                 meta.parser(ctx)

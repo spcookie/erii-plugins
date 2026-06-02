@@ -24,8 +24,8 @@ private suspend fun ensureApiBase() {
 
 // ========== Tool ==========
 
-@Tool
-@LLMDescription("当用户想要搜索或点播音乐时，调用此 tool 搜索音乐并发送音乐")
+@LLMTool
+@LLMDesc("当用户想要搜索或点播音乐时，调用此 tool 搜索音乐并发送音乐")
 suspend fun searchMusic(keyword: String, limit: Int = 5): String? {
     log.info { "Search music keyword: $keyword" }
     if (keyword.isBlank()) {
