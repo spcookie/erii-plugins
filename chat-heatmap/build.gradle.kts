@@ -3,3 +3,7 @@ plugins {
 }
 
 version = "1.0.0"
+
+dependencies {
+    implementation("org.thymeleaf:thymeleaf:3.1.3.RELEASE")
+}

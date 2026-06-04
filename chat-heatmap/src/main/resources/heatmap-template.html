@@ -1,55 +1,171 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
 <head>
 <meta charset="UTF-8">
 <title>聊天活跃热力图</title>
-<style>
-{{calHeatmapCss}}
-</style>
+  <link href="../static/cal-heatmap.css" rel="stylesheet" th:href="${staticCss}">
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  body{background:#faf8f5;display:flex;align-items:center;justify-content:center;min-height:100vh;
-    font-family:Charter,'Iowan Old Style',Georgia,'Times New Roman',serif;color:#2c2c2c;-webkit-font-smoothing:antialiased}
-  .page{width:820px;background:#fffef9;padding:56px 64px 48px;box-shadow:0 1px 4px rgba(0,0,0,.04),0 8px 32px rgba(0,0,0,.06)}
-  .kicker{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:10px;
-    text-transform:uppercase;letter-spacing:2.5px;color:#a09080;margin-bottom:16px}
-  .headline{font-size:36px;font-weight:400;line-height:1.15;letter-spacing:-.01em;color:#1a1a1a}
+
+  body {
+    background: #fffef9;
+    font-family: Charter, 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+    color: #2c2c2c;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 44px 20px;
+    overflow: hidden
+  }
+
+  .wrapper {
+    display: flex;
+    flex-direction: column
+  }
+
+  .kicker {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: #a09080;
+    margin-bottom: 16px
+  }
+
+  .headline {
+    font-size: 42px;
+    font-weight: 400;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+    color: #1a1a1a
+  }
   .headline strong{font-weight:600}
-  .dek{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:14px;
-    line-height:1.6;color:#6b6b6b;margin-top:12px;max-width:480px}
-  .divider{width:40px;height:1px;background:#d4c8bc;margin:28px 0 32px}
-  .stats-print{display:flex;gap:48px;margin-bottom:40px}
+
+  .dek {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 18px;
+    line-height: 1.5;
+    color: #6b6b6b;
+    margin-top: 10px
+  }
+
+  .divider {
+    width: 44px;
+    height: 2px;
+    background: #d4c8bc;
+    margin: 28px 0 32px
+  }
+
+  .stats-print {
+    display: flex;
+    gap: 56px;
+    margin-bottom: 44px
+  }
   .stat-item{display:flex;flex-direction:column}
-  .stat-item .label{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:10px;
-    text-transform:uppercase;letter-spacing:1.2px;color:#a09080;margin-bottom:6px}
-  .stat-item .value{font-size:42px;font-weight:400;line-height:1;color:#1a1a1a}
-  .stat-item .value .unit{font-size:16px;color:#b0a090;font-weight:400;margin-left:3px}
-  .rank-note{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:13px;
-    color:#6b6b6b;line-height:1.6;margin-top:4px}
-  .rank-note em{font-family:Charter,'Iowan Old Style',Georgia,serif;font-style:normal;font-size:24px;
-    font-weight:600;color:#b08840;margin-right:2px}
-  .section-label{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:9px;
-    text-transform:uppercase;letter-spacing:2px;color:#a09080;margin-bottom:10px}
-  .heatmap-frame{border:1px solid #e8e0d8;padding:12px 14px 10px;background:#fefcf8}
+
+  .stat-item .label {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1.6px;
+    color: #a09080;
+    margin-bottom: 8px
+  }
+
+  .stat-item .value {
+    font-size: 50px;
+    font-weight: 400;
+    line-height: 1;
+    color: #1a1a1a
+  }
+
+  .stat-item .value .unit {
+    font-size: 20px;
+    color: #b0a090;
+    font-weight: 400;
+    margin-left: 3px
+  }
+
+  .rank-note {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 18px;
+    color: #6b6b6b;
+    line-height: 1.6;
+    margin-top: 6px
+  }
+
+  .rank-note em {
+    font-family: Charter, 'Iowan Old Style', Georgia, serif;
+    font-style: normal;
+    font-size: 34px;
+    font-weight: 600;
+    color: #b08840;
+    margin-right: 3px
+  }
+
+  .section-label {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: #a09080;
+    margin-bottom: 10px
+  }
+
+  .heatmap-frame {
+    display: inline-flex;
+    flex-direction: column;
+    align-self: center;
+    padding: 6px 0 0
+  }
   .heatmap-frame .ch-container{margin:0 auto}
-  .heatmap-footer{display:flex;justify-content:flex-end;align-items:center;gap:5px;margin-top:10px;
-    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:9px;color:#c8b8a8}
-  .legend-swatch{display:flex;gap:3px}
-  .legend-swatch div{width:11px;height:11px;border-radius:1px}
+
+  .heatmap-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 12px;
+    color: #c8b8a8
+  }
+
+  .legend-swatch {
+    display: flex;
+    gap: 4px
+  }
+
+  .legend-swatch div {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px
+  }
 </style>
 </head>
 <body>
-<div class="page">
+<div class="wrapper">
   <div class="kicker">聊天数据回顾</div>
-  <h1 class="headline"><strong>{{nickname}}</strong>的年度活跃足迹</h1>
-  <p class="dek">{{startDate}} — {{endDate}}，52 周发言追踪。</p>
+  <h1 class="headline"><strong th:text="${nickname}">测试用户</strong>的半年活跃足迹</h1>
+  <p class="dek"><span th:text="${startDate}">2025/01</span> — <span th:text="${endDate}">2026/01</span>，26 周发言追踪。
+  </p>
   <div class="divider"></div>
   <div class="stats-print">
-    <div class="stat-item"><span class="label">全年总字数</span>
-      <span class="value">{{totalWords}}<span class="unit">字</span></span></div>
+    <div class="stat-item"><span class="label">半年总字数</span>
+      <span class="value"><span th:text="${totalWords}">0</span><span class="unit">字</span></span></div>
     <div class="stat-item"><span class="label">最近一日</span>
-      <span class="value">{{todayWords}}<span class="unit">字</span></span></div>
-    {{rankSection}}
+      <span class="value"><span th:text="${todayWords}">0</span><span class="unit">字</span></span></div>
+    <div class="stat-item" th:if="${!isGroup}">
+      <span class="label">群内排名</span>
+      <span class="rank-note" id="rankValue">群内<em>#<span th:text="${rank}">0</span></em> · 共 <span
+              th:text="${totalUsers}">0</span> 人</span>
+    </div>
+    <div class="stat-item" th:if="${isGroup}">
+      <span class="label">活跃成员</span>
+      <span class="rank-note">共 <em th:text="${totalUsers}">0</em> 人参与</span>
+    </div>
   </div>
   <div class="section-label">每日发言量分布</div>
   <div class="heatmap-frame">
@@ -59,29 +175,99 @@
     </div>
   </div>
 </div>
-<script>{{d3js}}</script>
-<script>{{calHeatmapJs}}</script>
+<script src="../static/d3.v7.min.js" th:src="${staticD3}"></script>
+<script src="../static/cal-heatmap.min.js" th:src="${staticCalHeatmap}"></script>
+<template id="heatmap-data" th:utext="${dailyCounts}">{}</template>
+<template id="heatmap-colors" th:utext="${colors}">["#ebedf0","#9be9a8","#40c463","#30a14e","#216e39"]</template>
+<template id="heatmap-start" th:utext="${startDateJs}">2025-06-01</template>
 <script>
-(function(){
-var colors={{colors}};
-var data={{dailyCounts}};
-var sd=new Date("{{startDateJs}}-01");
-var ed=new Date("{{endDateJs}}-01");
-ed=new Date(ed.getFullYear(),ed.getMonth()+1,0);
-var vals=Object.values(data),max=vals.length?Math.max.apply(null,vals):0;
-var domain=max===0?[0,1,2,3,4]:[0,1,Math.ceil(max*.25),Math.ceil(max*.5),Math.ceil(max*.75)];
-var leg=document.getElementById('legendSwatch');
-colors.forEach(function(c){var d=document.createElement('div');d.style.backgroundColor=c;leg.appendChild(d)});
-var cal=new CalHeatmap();
-cal.paint({
-  data:{source:data,x:'date',y:'value'},
-  date:{start:sd},
-  range:12,
-  scale:{color:{type:'threshold',range:colors,domain:domain}},
-  domain:{type:'month',gutter:10,label:{text:'MMM',textAlign:'start',position:'top',offset:{y:-2}}},
-  subDomain:{type:'day',radius:2,width:12,height:12,gutter:3},
-  itemSelector:'#heatmapContainer'
-});
+  (() => {
+    const getData = (id, fallback) => {
+      const el = document.getElementById(id);
+      if (!el || !el.content) return fallback();
+      const text = el.content.textContent.trim();
+      if (!text) return fallback();
+      try {
+        const v = JSON.parse(text);
+        if (v && (typeof v !== 'object' || Object.keys(v).length > 0)) return v;
+      } catch (e) {
+      }
+      return fallback();
+    };
+
+    const rawData = getData('heatmap-data', () => {
+      const mock = {};
+      const end = new Date();
+      const start = new Date(end.getFullYear(), end.getMonth() - 6, 1);
+      for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        if (Math.random() > 0.5) {
+          const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+          mock[k] = Math.floor(Math.random() * 300);
+        }
+      }
+      return mock;
+    });
+
+    let colorsVal = getData('heatmap-colors', () => ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]);
+
+    const getStr = (id, fallback) => {
+      const el = document.getElementById(id);
+      if (!el || !el.content) return fallback();
+      const v = el.content.textContent.trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : fallback();
+    };
+    const startDateStr = getStr('heatmap-start', () => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - 6);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    });
+    const entries = Object.keys(rawData).map(d => ({date: d, value: rawData[d]}));
+    const sd = new Date(startDateStr + "-01");
+    const vals = entries.map(e => e.value);
+    const max = vals.length ? Math.max(...vals) : 0;
+    let domain;
+    if (max === 0) {
+      domain = [0, 1, 2, 3, 4];
+    } else {
+      const s = max / 4;
+      const d1 = Math.max(1, Math.round(s));
+      const d2 = Math.max(d1 + 1, Math.round(s * 2));
+      const d3 = Math.max(d2 + 1, Math.round(s * 3));
+      domain = [0, d1, d2, d3, max];
+    }
+
+    const leg = document.getElementById('legendSwatch');
+    colorsVal.forEach(c => {
+      const d = document.createElement('div');
+      d.style.backgroundColor = c;
+      leg.appendChild(d);
+    });
+
+    const renderHeatmap = () => {
+      try {
+        new CalHeatmap().paint({
+          data: {source: entries, x: 'date', y: 'value'},
+          date: {start: sd},
+          range: 6,
+          scale: {color: {type: 'threshold', range: colorsVal, domain}},
+          domain: {
+            type: 'month',
+            gutter: 6,
+            label: {text: 'MMM', textAlign: 'start', position: 'top', offset: {y: -2}}
+          },
+          subDomain: {type: 'day', radius: 2, width: 14, height: 14, gutter: 2},
+          itemSelector: '#heatmapContainer'
+        });
+      } catch (e) {
+        document.getElementById('heatmapContainer').innerText = 'Error: ' + e.message;
+      }
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => requestAnimationFrame(() => setTimeout(renderHeatmap, 50)));
+    } else {
+      requestAnimationFrame(() => setTimeout(renderHeatmap, 50));
+    }
 })();
 </script>
 </body>
