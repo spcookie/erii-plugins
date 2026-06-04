@@ -219,10 +219,10 @@
     const startDateStr = getStr('heatmap-start', () => {
       const d = new Date();
       d.setMonth(d.getMonth() - 6);
-      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
     });
     const entries = Object.keys(rawData).map(d => ({date: d, value: rawData[d]}));
-    const sd = new Date(startDateStr + "-01");
+    const sd = new Date(startDateStr);
     const vals = entries.map(e => e.value);
     const max = vals.length ? Math.max(...vals) : 0;
     let domain;

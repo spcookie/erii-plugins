@@ -23,16 +23,25 @@ import org.thymeleaf.templatemode.TemplateMode
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver
 import uesugi.common.data.HistoryRecord
 import uesugi.common.data.HistoryTable
-import uesugi.common.data.MessageType
 import uesugi.common.toolkit.BrowserScraper
 import uesugi.common.toolkit.BrowserScraperHolder
 import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.onebot.sdk.message.buildMessage
+import uesugi.spi.Kv
 import uesugi.spi.Meta
 import uesugi.spi.annotation.*
 import uesugi.spi.isAdmin
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.days
+
+private val REFERENCE_BLOCK = Regex(
+    "---REFERENCE MESSAGE START---.*?---REFERENCE MESSAGE END---",
+    RegexOption.DOT_MATCHES_ALL
+)
+
+private fun HistoryRecord.effectiveLength(): Int =
+    content?.replace(REFERENCE_BLOCK, "")?.length ?: 0
 
 private val log = KotlinLogging.logger {}
 
@@ -47,6 +56,8 @@ private val COLOR_SCHEMES = listOf(
 )
 
 private val pluginClassLoader = object {}.javaClass.classLoader
+
+private val htmlCache = ConcurrentHashMap<String, String>()
 
 private val templateEngine by lazy {
     val resolver = ClassLoaderTemplateResolver(pluginClassLoader).apply {
@@ -63,12 +74,15 @@ private val templateEngine by lazy {
 private var serverRouteReady = false
 private val serverRouteLock = Any()
 
+@Volatile
+private var serverBaseUrl: String? = null
+
 private suspend fun ensureServerRoute() {
     if (serverRouteReady) return
-    val capturedMem = useMem()
     val server = useServer()
     synchronized(serverRouteLock) {
         if (serverRouteReady) return
+        serverBaseUrl = server.url.buildString()
         server.route {
             val loader = pluginClassLoader
             get("/static/d3.v7.min.js") {
@@ -91,7 +105,7 @@ private suspend fun ensureServerRoute() {
             }
             get("/heatmap/{id}") {
                 val id = call.parameters["id"]!!
-                val html = capturedMem.get(id)
+                val html = htmlCache.remove(id)
                 if (html != null) call.respondText(html, ContentType.Text.Html)
                 else call.respondText("Not found", ContentType.Text.Plain)
             }
@@ -152,7 +166,7 @@ suspend fun getMyHeatmap(): String {
     return "热力图已生成"
 }
 
-@LLMTool(set = "heatmap")
+@LLMTool(set = "heatmap-all")
 @LLMDesc("当用户想查看全群或\"大家\"的聊天活跃度、发言统计时调用，发送一张全群发言热力图")
 suspend fun getGroupHeatmap(): String {
     val meta = useToolMeta().value
@@ -170,18 +184,23 @@ private suspend fun generateAndSendHeatmap(meta: Meta, isGroup: Boolean) {
     log.info { "Heatmap data loaded: totalWords=${data.totalWords}, days=${data.dailyCounts.size}, isGroup=$isGroup" }
 
     val scheme = COLOR_SCHEMES.random()
-    val html = buildHtml(data, scheme)
+    val html = try {
+        buildHtml(data, scheme)
+    } catch (e: Exception) {
+        log.error(e) { "buildHtml failed: ${e.message}, data=${data}" }
+        return
+    }
 
     ensureServerRoute()
 
     val id = UUID.randomUUID().toString()
-    useMem().set(id, html)
+    htmlCache[id] = html
 
     val screenshot = withContext(Dispatchers.IO) {
         takeScreenshot(id)
     }
 
-    useMem().delete(id)
+    htmlCache.remove(id)
 
     if (screenshot != null) {
         val base64 = Base64.getEncoder().encodeToString(screenshot)
@@ -192,10 +211,11 @@ private suspend fun generateAndSendHeatmap(meta: Meta, isGroup: Boolean) {
     }
 }
 
-private suspend fun takeScreenshot(id: String): ByteArray? {
-    val url = URLBuilder().takeFrom(useServer().url.buildString()).apply {
+private fun takeScreenshot(id: String): ByteArray? {
+    val url = URLBuilder().takeFrom(serverBaseUrl!!).apply {
         appendPathSegments("heatmap", id)
     }.buildString()
+    log.info { "Screenshot URL: $url" }
     return try {
         BrowserScraperHolder.getInstance().takeFullScreenshot(
             url = url,
@@ -248,8 +268,7 @@ private suspend fun queryHalfYearRecords(
         HistoryTable.selectAll().where {
             (HistoryTable.groupId eq groupId) and
                     (HistoryTable.createdAt greaterEq window.startLDT) and
-                    (HistoryTable.createdAt lessEq window.endLDT) and
-                    (HistoryTable.messageType eq MessageType.TEXT)
+                    (HistoryTable.createdAt lessEq window.endLDT)
         }
     }
 
@@ -262,8 +281,7 @@ private suspend fun queryTodayRecords(
     return database.getHistory {
         HistoryTable.selectAll().where {
             (HistoryTable.groupId eq groupId) and
-                    (HistoryTable.createdAt greaterEq todayStart) and
-                    (HistoryTable.messageType eq MessageType.TEXT)
+                    (HistoryTable.createdAt greaterEq todayStart)
         }
     }
 }
@@ -271,13 +289,13 @@ private suspend fun queryTodayRecords(
 private fun List<HistoryRecord>.foldDailyCounts(): Map<String, Int> =
     fold(mutableMapOf()) { acc, r ->
         val dk = "${r.createdAt.year}-${pad(r.createdAt.month.number)}-${pad(r.createdAt.day)}"
-        acc[dk] = (acc[dk] ?: 0) + (r.content?.length ?: 0)
+        acc[dk] = (acc[dk] ?: 0) + r.effectiveLength()
         acc
     }
 
 private fun List<HistoryRecord>.foldUserWordCounts(): Map<String, Int> =
     fold(mutableMapOf()) { acc, r ->
-        acc[r.userId] = (acc[r.userId] ?: 0) + (r.content?.length ?: 0)
+        acc[r.userId] = (acc[r.userId] ?: 0) + r.effectiveLength()
         acc
     }
 
@@ -292,7 +310,7 @@ private fun deserializeCounts(str: String): Map<String, Int> {
     }
 }
 
-private suspend fun registerCacheKey(kv: uesugi.spi.Kv, key: String) {
+private suspend fun registerCacheKey(kv: Kv, key: String) {
     val existing = kv.get(CACHE_KEYS_META) ?: ""
     val keys = existing.split(",").toMutableSet()
     if (keys.add(key)) {
@@ -320,12 +338,12 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
                 val mergedDaily = cachedDaily.toMutableMap()
                 for (r in todayRecords.filter { it.userId == userId }) {
                     val dk = "${r.createdAt.year}-${pad(r.createdAt.month.number)}-${pad(r.createdAt.day)}"
-                    mergedDaily[dk] = (mergedDaily[dk] ?: 0) + (r.content?.length ?: 0)
+                    mergedDaily[dk] = (mergedDaily[dk] ?: 0) + (r.effectiveLength())
                 }
 
                 val mergedUsers = cachedUsers.toMutableMap()
                 for (r in todayRecords) {
-                    mergedUsers[r.userId] = (mergedUsers[r.userId] ?: 0) + (r.content?.length ?: 0)
+                    mergedUsers[r.userId] = (mergedUsers[r.userId] ?: 0) + (r.effectiveLength())
                 }
 
                 val totalWords = mergedDaily.values.sum()
@@ -401,7 +419,7 @@ private suspend fun loadGroupHeatmapData(groupId: String): HeatmapData {
                 val mergedDaily = cachedDaily.toMutableMap()
                 for (r in todayRecords) {
                     val dk = "${r.createdAt.year}-${pad(r.createdAt.month.number)}-${pad(r.createdAt.day)}"
-                    mergedDaily[dk] = (mergedDaily[dk] ?: 0) + (r.content?.length ?: 0)
+                    mergedDaily[dk] = (mergedDaily[dk] ?: 0) + (r.effectiveLength())
                 }
 
                 val totalWords = mergedDaily.values.sum()
