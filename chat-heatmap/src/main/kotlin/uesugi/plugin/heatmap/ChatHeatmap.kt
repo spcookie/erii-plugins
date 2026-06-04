@@ -8,6 +8,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
@@ -20,6 +21,7 @@ import org.thymeleaf.TemplateEngine
 import org.thymeleaf.context.Context
 import org.thymeleaf.templatemode.TemplateMode
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver
+import uesugi.common.data.HistoryRecord
 import uesugi.common.data.HistoryTable
 import uesugi.common.data.MessageType
 import uesugi.common.toolkit.BrowserScraper
@@ -28,12 +30,11 @@ import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.onebot.sdk.message.buildMessage
 import uesugi.spi.Meta
 import uesugi.spi.annotation.*
+import uesugi.spi.isAdmin
 import java.util.*
 import kotlin.time.Duration.Companion.days
 
 private val log = KotlinLogging.logger {}
-
-// ========== Color Schemes ==========
 
 private data class ColorScheme(val name: String, val colors: List<String>)
 
@@ -44,8 +45,6 @@ private val COLOR_SCHEMES = listOf(
     ColorScheme("purple", listOf("#ebedf0", "#d4b8ff", "#9e6ad6", "#7146a3", "#462868")),
     ColorScheme("rose", listOf("#ebedf0", "#ffb8c8", "#e06c8f", "#b34068", "#702845"))
 )
-
-// ========== Template Engine ==========
 
 private val pluginClassLoader = object {}.javaClass.classLoader
 
@@ -60,8 +59,6 @@ private val templateEngine by lazy {
     TemplateEngine().apply { setTemplateResolver(resolver) }
 }
 
-// ========== Server Route ==========
-
 @Volatile
 private var serverRouteReady = false
 private val serverRouteLock = Any()
@@ -72,35 +69,36 @@ private suspend fun ensureServerRoute() {
     val server = useServer()
     synchronized(serverRouteLock) {
         if (serverRouteReady) return
+        server.route {
+            val loader = pluginClassLoader
+            get("/static/d3.v7.min.js") {
+                call.respondBytes(
+                    loader.getResourceAsStream("static/d3.v7.min.js")!!.readBytes(),
+                    ContentType.Application.JavaScript
+                )
+            }
+            get("/static/cal-heatmap.min.js") {
+                call.respondBytes(
+                    loader.getResourceAsStream("static/cal-heatmap.min.js")!!.readBytes(),
+                    ContentType.Application.JavaScript
+                )
+            }
+            get("/static/cal-heatmap.css") {
+                call.respondBytes(
+                    loader.getResourceAsStream("static/cal-heatmap.css")!!.readBytes(),
+                    ContentType.Text.CSS
+                )
+            }
+            get("/heatmap/{id}") {
+                val id = call.parameters["id"]!!
+                val html = capturedMem.get(id)
+                if (html != null) call.respondText(html, ContentType.Text.Html)
+                else call.respondText("Not found", ContentType.Text.Plain)
+            }
+        }
         serverRouteReady = true
     }
-    server.route {
-        val loader = pluginClassLoader
-        get("/static/d3.v7.min.js") {
-            call.respondBytes(
-                loader.getResourceAsStream("static/d3.v7.min.js")!!.readBytes(),
-                ContentType.Application.JavaScript
-            )
-        }
-        get("/static/cal-heatmap.min.js") {
-            call.respondBytes(
-                loader.getResourceAsStream("static/cal-heatmap.min.js")!!.readBytes(),
-                ContentType.Application.JavaScript
-            )
-        }
-        get("/static/cal-heatmap.css") {
-            call.respondBytes(loader.getResourceAsStream("static/cal-heatmap.css")!!.readBytes(), ContentType.Text.CSS)
-        }
-        get("/heatmap/{id}") {
-            val id = call.parameters["id"]!!
-            val html = capturedMem.get(id)
-            if (html != null) call.respondText(html, ContentType.Text.Html)
-            else call.respondText("Not found", ContentType.Text.Plain)
-        }
-    }
 }
-
-// ========== Data Model ==========
 
 private data class HeatmapData(
     val nickname: String,
@@ -114,8 +112,6 @@ private data class HeatmapData(
     val isGroup: Boolean
 )
 
-// ========== Commands ==========
-
 @Cmd(name = "heatmap", alias = ["热力图"], toolSets = ["heatmap"])
 suspend fun heatmapCmd(meta: Meta) {
     log.info { "/heatmap triggered by ${meta.senderId} in group ${meta.groupId}" }
@@ -128,7 +124,25 @@ suspend fun heatmapAllCmd(meta: Meta) {
     generateAndSendHeatmap(meta, isGroup = true)
 }
 
-// ========== Tools (LLM) ==========
+@Cmd(name = "heatmap-reset", alias = [])
+suspend fun heatmapResetCmd(meta: Meta) {
+    if (!meta.isAdmin()) {
+        log.info { "/heatmap-reset denied for non-admin ${meta.senderId} in group ${meta.groupId}" }
+        return
+    }
+    val kv = useKv()
+    val keysMeta = kv.get(CACHE_KEYS_META)
+    if (keysMeta != null) {
+        for (key in keysMeta.split(",")) {
+            if (key.isNotEmpty()) {
+                kv.delete(key)
+                log.info { "Deleted heatmap cache key: $key" }
+            }
+        }
+        kv.delete(CACHE_KEYS_META)
+    }
+    log.info { "/heatmap-reset executed by admin ${meta.senderId}, all cache cleared" }
+}
 
 @LLMTool(set = "heatmap")
 @LLMDesc("当用户想查看自己或\"我\"的聊天活跃度、发言统计、热力图时调用，发送一张个人发言热力图")
@@ -145,8 +159,6 @@ suspend fun getGroupHeatmap(): String {
     generateAndSendHeatmap(meta, isGroup = true)
     return "全群热力图已生成"
 }
-
-// ========== Core Logic ==========
 
 private suspend fun generateAndSendHeatmap(meta: Meta, isGroup: Boolean) {
     val groupId = meta.groupId
@@ -189,7 +201,7 @@ private suspend fun takeScreenshot(id: String): ByteArray? {
             url = url,
             width = 780,
             height = 640,
-            quality = 90,
+            quality = 100,
             type = BrowserScraper.ScreenshotType.JPEG,
             waitForNetworkIdle = true
         )
@@ -199,79 +211,240 @@ private suspend fun takeScreenshot(id: String): ByteArray? {
     }
 }
 
-private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapData {
-    val database = useDatabase()
+private const val CACHE_KEYS_META = "heatmap:keys"
+
+private fun cacheKeyPersonal(groupId: String, userId: String) = "heatmap:p:$groupId:$userId"
+private fun cacheKeyGroup(groupId: String) = "heatmap:g:$groupId"
+
+private data class TimeWindow(
+    val startLDT: LocalDateTime,
+    val endLDT: LocalDateTime,
+    val todayKey: String,
+    val yesterdayKey: String
+)
+
+private fun timeWindow(): TimeWindow {
+    val timeZone = TimeZone.currentSystemDefault()
     val now = kotlin.time.Clock.System.now()
     val halfYearAgo = now - 183.days
-    val timeZone = TimeZone.currentSystemDefault()
-    val startLDT = halfYearAgo.toLocalDateTime(timeZone)
     val endLDT = now.toLocalDateTime(timeZone)
+    val startLDT = halfYearAgo.toLocalDateTime(timeZone)
+    val todayLDT = now.toLocalDateTime(timeZone)
+    val yesterdayLDT = now.minus(1.days).toLocalDateTime(timeZone)
+    return TimeWindow(
+        startLDT = startLDT,
+        endLDT = endLDT,
+        todayKey = "${todayLDT.year}-${pad(todayLDT.month.number)}-${pad(todayLDT.day)}",
+        yesterdayKey = "${yesterdayLDT.year}-${pad(yesterdayLDT.month.number)}-${pad(yesterdayLDT.day)}"
+    )
+}
 
-    val allRecords = database.getHistory {
+private suspend fun queryHalfYearRecords(
+    database: uesugi.spi.Database,
+    groupId: String,
+    window: TimeWindow
+): List<HistoryRecord> =
+    database.getHistory {
         HistoryTable.selectAll().where {
             (HistoryTable.groupId eq groupId) and
-                    (HistoryTable.createdAt greaterEq startLDT) and
-                    (HistoryTable.createdAt lessEq endLDT) and
+                    (HistoryTable.createdAt greaterEq window.startLDT) and
+                    (HistoryTable.createdAt lessEq window.endLDT) and
                     (HistoryTable.messageType eq MessageType.TEXT)
         }
     }
 
+private suspend fun queryTodayRecords(
+    database: uesugi.spi.Database,
+    groupId: String,
+    endLDT: LocalDateTime
+): List<HistoryRecord> {
+    val todayStart = LocalDateTime(endLDT.year, endLDT.month, endLDT.day, 0, 0)
+    return database.getHistory {
+        HistoryTable.selectAll().where {
+            (HistoryTable.groupId eq groupId) and
+                    (HistoryTable.createdAt greaterEq todayStart) and
+                    (HistoryTable.messageType eq MessageType.TEXT)
+        }
+    }
+}
+
+private fun List<HistoryRecord>.foldDailyCounts(): Map<String, Int> =
+    fold(mutableMapOf()) { acc, r ->
+        val dk = "${r.createdAt.year}-${pad(r.createdAt.month.number)}-${pad(r.createdAt.day)}"
+        acc[dk] = (acc[dk] ?: 0) + (r.content?.length ?: 0)
+        acc
+    }
+
+private fun List<HistoryRecord>.foldUserWordCounts(): Map<String, Int> =
+    fold(mutableMapOf()) { acc, r ->
+        acc[r.userId] = (acc[r.userId] ?: 0) + (r.content?.length ?: 0)
+        acc
+    }
+
+private fun serializeCounts(counts: Map<String, Int>): String =
+    counts.entries.joinToString(",") { "${it.key}=${it.value}" }
+
+private fun deserializeCounts(str: String): Map<String, Int> {
+    if (str.isEmpty()) return emptyMap()
+    return str.split(",").associate { part ->
+        val (date, count) = part.split("=", limit = 2)
+        date to count.toInt()
+    }
+}
+
+private suspend fun registerCacheKey(kv: uesugi.spi.Kv, key: String) {
+    val existing = kv.get(CACHE_KEYS_META) ?: ""
+    val keys = existing.split(",").toMutableSet()
+    if (keys.add(key)) {
+        kv.set(CACHE_KEYS_META, keys.joinToString(","))
+    }
+}
+
+private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapData {
+    val database = useDatabase()
+    val kv = useKv()
+    val cacheKey = cacheKeyPersonal(groupId, userId)
+    val window = timeWindow()
+
+    val cached = kv.get(cacheKey)
+    if (cached != null) {
+        try {
+            val parts = cached.split("\n", limit = 4)
+            if (parts.size >= 4 && parts[0] == window.yesterdayKey) {
+                val cachedNickname = parts[1]
+                val cachedDaily = deserializeCounts(parts[2])
+                val cachedUsers = deserializeCounts(parts[3])
+
+                val todayRecords = queryTodayRecords(database, groupId, window.endLDT)
+
+                val mergedDaily = cachedDaily.toMutableMap()
+                for (r in todayRecords.filter { it.userId == userId }) {
+                    val dk = "${r.createdAt.year}-${pad(r.createdAt.month.number)}-${pad(r.createdAt.day)}"
+                    mergedDaily[dk] = (mergedDaily[dk] ?: 0) + (r.content?.length ?: 0)
+                }
+
+                val mergedUsers = cachedUsers.toMutableMap()
+                for (r in todayRecords) {
+                    mergedUsers[r.userId] = (mergedUsers[r.userId] ?: 0) + (r.content?.length ?: 0)
+                }
+
+                val totalWords = mergedDaily.values.sum()
+                val todayWords = mergedDaily[window.todayKey] ?: 0
+                val targetWords = mergedUsers[userId] ?: 0
+                val rank = mergedUsers.values.count { it > targetWords } + 1
+                val nickname = todayRecords.firstOrNull { it.userId == userId }?.nick ?: cachedNickname
+
+                val cacheDaily = mergedDaily.filterKeys { it != window.todayKey }
+                val cacheValue =
+                    "${window.todayKey}\n${nickname}\n${serializeCounts(cacheDaily)}\n${serializeCounts(mergedUsers)}"
+                kv.set(cacheKey, cacheValue)
+                log.info { "Heatmap cache hit for $userId, loaded ${todayRecords.size} today records" }
+
+                return HeatmapData(
+                    nickname, mergedDaily, totalWords, todayWords, rank, mergedUsers.size,
+                    "${window.startLDT.year}/${pad(window.startLDT.month.number)}",
+                    "${window.endLDT.year}/${pad(window.endLDT.month.number)}", false
+                )
+            }
+        } catch (e: Exception) {
+            log.warn(e) { "Cache parse failed for $cacheKey, falling back to full load" }
+        }
+    }
+
+    val allRecords = queryHalfYearRecords(database, groupId, window)
     val userRecords = allRecords.filter { it.userId == userId }
 
-    val dailyCounts = userRecords.groupBy {
-        "${it.createdAt.year}-${pad(it.createdAt.month.number)}-${pad(it.createdAt.day)}"
-    }.mapValues { (_, msgs) -> msgs.sumOf { it.content?.length ?: 0 } }
-
+    val dailyCounts = userRecords.foldDailyCounts()
     val totalWords = dailyCounts.values.sum()
-    val todayKey = "${endLDT.year}-${pad(endLDT.month.number)}-${pad(endLDT.day)}"
-    val todayWords = dailyCounts[todayKey] ?: 0
+    val todayWords = dailyCounts[window.todayKey] ?: 0
 
-    val allUserWordCounts = allRecords.groupBy { it.userId }
-        .mapValues { (_, msgs) -> msgs.sumOf { it.content?.length ?: 0 } }
-        .entries.sortedByDescending { it.value }
-
-    val rank = allUserWordCounts.indexOfFirst { it.key == userId } + 1
+    val allUserWordCounts = allRecords.foldUserWordCounts()
+    val targetWords = allUserWordCounts[userId] ?: 0
+    val rank = allUserWordCounts.values.count { it > targetWords } + 1
     val totalUsers = allUserWordCounts.size
     val nickname = allRecords.firstOrNull { it.userId == userId }?.nick ?: "用户"
 
+    try {
+        val cacheDaily = dailyCounts.filterKeys { it != window.todayKey }
+        val cacheValue =
+            "${window.todayKey}\n${nickname}\n${serializeCounts(cacheDaily)}\n${serializeCounts(allUserWordCounts)}"
+        kv.set(cacheKey, cacheValue)
+        registerCacheKey(kv, cacheKey)
+        log.info { "Heatmap cache stored for $userId, ${cacheDaily.size} days" }
+    } catch (e: Exception) {
+        log.warn(e) { "Failed to store cache for $cacheKey" }
+    }
+
     return HeatmapData(
         nickname, dailyCounts, totalWords, todayWords, rank, totalUsers,
-        "${startLDT.year}/${pad(startLDT.month.number)}", "${endLDT.year}/${pad(endLDT.month.number)}", false
+        "${window.startLDT.year}/${pad(window.startLDT.month.number)}",
+        "${window.endLDT.year}/${pad(window.endLDT.month.number)}", false
     )
 }
 
 private suspend fun loadGroupHeatmapData(groupId: String): HeatmapData {
     val database = useDatabase()
-    val now = kotlin.time.Clock.System.now()
-    val halfYearAgo = now - 183.days
-    val timeZone = TimeZone.currentSystemDefault()
-    val startLDT = halfYearAgo.toLocalDateTime(timeZone)
-    val endLDT = now.toLocalDateTime(timeZone)
+    val kv = useKv()
+    val cacheKey = cacheKeyGroup(groupId)
+    val window = timeWindow()
 
-    val allRecords = database.getHistory {
-        HistoryTable.selectAll().where {
-            (HistoryTable.groupId eq groupId) and
-                    (HistoryTable.createdAt greaterEq startLDT) and
-                    (HistoryTable.createdAt lessEq endLDT) and
-                    (HistoryTable.messageType eq MessageType.TEXT)
+    val cached = kv.get(cacheKey)
+    if (cached != null) {
+        try {
+            val parts = cached.split("\n", limit = 3)
+            if (parts.size >= 3 && parts[0] == window.yesterdayKey) {
+                val cachedTotalUsers = parts[1].toInt()
+                val cachedDaily = deserializeCounts(parts[2])
+
+                val todayRecords = queryTodayRecords(database, groupId, window.endLDT)
+
+                val mergedDaily = cachedDaily.toMutableMap()
+                for (r in todayRecords) {
+                    val dk = "${r.createdAt.year}-${pad(r.createdAt.month.number)}-${pad(r.createdAt.day)}"
+                    mergedDaily[dk] = (mergedDaily[dk] ?: 0) + (r.content?.length ?: 0)
+                }
+
+                val totalWords = mergedDaily.values.sum()
+                val todayWords = mergedDaily[window.todayKey] ?: 0
+                val totalUsers = maxOf(cachedTotalUsers, todayRecords.map { it.userId }.distinct().size)
+
+                val cacheDaily = mergedDaily.filterKeys { it != window.todayKey }
+                kv.set(cacheKey, "${window.todayKey}\n${totalUsers}\n${serializeCounts(cacheDaily)}")
+                log.info { "Group heatmap cache hit for $groupId, loaded ${todayRecords.size} today records" }
+
+                return HeatmapData(
+                    "全群", mergedDaily, totalWords, todayWords, 0, totalUsers,
+                    "${window.startLDT.year}/${pad(window.startLDT.month.number)}",
+                    "${window.endLDT.year}/${pad(window.endLDT.month.number)}", true
+                )
+            }
+        } catch (e: Exception) {
+            log.warn(e) { "Group cache parse failed for $cacheKey, falling back to full load" }
         }
     }
 
-    val dailyCounts = allRecords.groupBy {
-        "${it.createdAt.year}-${pad(it.createdAt.month.number)}-${pad(it.createdAt.day)}"
-    }.mapValues { (_, msgs) -> msgs.sumOf { it.content?.length ?: 0 } }
+    val allRecords = queryHalfYearRecords(database, groupId, window)
 
+    val dailyCounts = allRecords.foldDailyCounts()
     val totalWords = dailyCounts.values.sum()
-    val todayKey = "${endLDT.year}-${pad(endLDT.month.number)}-${pad(endLDT.day)}"
-    val todayWords = dailyCounts[todayKey] ?: 0
+    val todayWords = dailyCounts[window.todayKey] ?: 0
+    val totalUsers = allRecords.map { it.userId }.distinct().size
+
+    try {
+        val cacheDaily = dailyCounts.filterKeys { it != window.todayKey }
+        kv.set(cacheKey, "${window.todayKey}\n${totalUsers}\n${serializeCounts(cacheDaily)}")
+        registerCacheKey(kv, cacheKey)
+        log.info { "Group heatmap cache stored for $groupId, ${cacheDaily.size} days" }
+    } catch (e: Exception) {
+        log.warn(e) { "Failed to store group cache for $cacheKey" }
+    }
 
     return HeatmapData(
-        "全群", dailyCounts, totalWords, todayWords, 0, allRecords.map { it.userId }.distinct().size,
-        "${startLDT.year}/${pad(startLDT.month.number)}", "${endLDT.year}/${pad(endLDT.month.number)}", true
+        "全群", dailyCounts, totalWords, todayWords, 0, totalUsers,
+        "${window.startLDT.year}/${pad(window.startLDT.month.number)}",
+        "${window.endLDT.year}/${pad(window.endLDT.month.number)}", true
     )
 }
-
-// ========== HTML Builder ==========
 
 private fun buildHtml(data: HeatmapData, scheme: ColorScheme): String {
     val colorsJson = scheme.colors.joinToString(", ") { "\"$it\"" }.let { "[$it]" }
@@ -289,8 +462,7 @@ private fun buildHtml(data: HeatmapData, scheme: ColorScheme): String {
         setVariable("nickname", data.nickname)
         setVariable("startDate", data.startDate)
         setVariable("endDate", data.endDate)
-        setVariable("startDateJs", data.startDate.replace("/", "-"))
-        setVariable("endDateJs", data.endDate.replace("/", "-"))
+        setVariable("startDateJs", "${data.startDate.replace("/", "-")}-01")
         setVariable("totalWords", formatNum(data.totalWords))
         setVariable("todayWords", formatNum(data.todayWords))
         setVariable("isGroup", data.isGroup)
