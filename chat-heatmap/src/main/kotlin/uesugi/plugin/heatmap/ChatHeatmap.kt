@@ -189,7 +189,7 @@ private suspend fun takeScreenshot(id: String): ByteArray? {
             url = url,
             width = 780,
             height = 640,
-            quality = 90,
+            quality = 100,
             type = BrowserScraper.ScreenshotType.JPEG,
             waitForNetworkIdle = true
         )
