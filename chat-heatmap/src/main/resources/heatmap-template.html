@@ -148,18 +148,18 @@
 <body>
 <div class="wrapper">
   <div class="kicker">聊天数据回顾</div>
-  <h1 class="headline"><strong th:text="${nickname}">测试用户</strong>的半年活跃足迹</h1>
+  <h1 class="headline"><strong th:text="${nickname}">测试用户</strong>的活跃足迹</h1>
   <p class="dek"><span th:text="${startDate}">2025/01</span> — <span th:text="${endDate}">2026/01</span>，26 周发言追踪。
   </p>
   <div class="divider"></div>
   <div class="stats-print">
-    <div class="stat-item"><span class="label">半年总字数</span>
+    <div class="stat-item"><span class="label">总字数</span>
       <span class="value"><span th:text="${totalWords}">0</span><span class="unit">字</span></span></div>
     <div class="stat-item"><span class="label">最近一日</span>
       <span class="value"><span th:text="${todayWords}">0</span><span class="unit">字</span></span></div>
     <div class="stat-item" th:if="${!isGroup}">
       <span class="label">群内排名</span>
-      <span class="rank-note" id="rankValue">群内<em>#<span th:text="${rank}">0</span></em> · 共 <span
+      <span class="rank-note" id="rankValue">群内<em><span th:text="${rank}">0</span></em> · 共 <span
               th:text="${totalUsers}">0</span> 人</span>
     </div>
     <div class="stat-item" th:if="${isGroup}">

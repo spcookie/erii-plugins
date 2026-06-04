@@ -132,13 +132,13 @@ suspend fun heatmapCmd(meta: Meta) {
     generateAndSendHeatmap(meta, isGroup = false)
 }
 
-@Cmd(name = "heatmap-all", alias = ["热力图全群"], toolSets = ["heatmap"])
+@Cmd(name = "heatmap-all", alias = ["热力图全群"], toolSets = ["heatmap-all"])
 suspend fun heatmapAllCmd(meta: Meta) {
     log.info { "/heatmap-all triggered by ${meta.senderId} in group ${meta.groupId}" }
     generateAndSendHeatmap(meta, isGroup = true)
 }
 
-@Cmd(name = "heatmap-reset", alias = [])
+@Cmd(name = "heatmap-reset")
 suspend fun heatmapResetCmd(meta: Meta) {
     if (!meta.isAdmin()) {
         log.info { "/heatmap-reset denied for non-admin ${meta.senderId} in group ${meta.groupId}" }
@@ -159,7 +159,7 @@ suspend fun heatmapResetCmd(meta: Meta) {
 }
 
 @LLMTool(set = "heatmap")
-@LLMDesc("当用户想查看自己或\"我\"的聊天活跃度、发言统计、热力图时调用，发送一张个人发言热力图")
+@LLMDesc("当用户想查看热力图或自己的聊天活跃度、发言统计、热力图时调用，发送一张个人发言热力图")
 suspend fun getMyHeatmap(): String {
     val meta = useToolMeta().value
     generateAndSendHeatmap(meta, isGroup = false)
@@ -167,7 +167,7 @@ suspend fun getMyHeatmap(): String {
 }
 
 @LLMTool(set = "heatmap-all")
-@LLMDesc("当用户想查看全群或\"大家\"的聊天活跃度、发言统计时调用，发送一张全群发言热力图")
+@LLMDesc("当用户想明确提到查看热力图全群的聊天活跃度、发言统计时调用，发送一张全群发言热力图")
 suspend fun getGroupHeatmap(): String {
     val meta = useToolMeta().value
     generateAndSendHeatmap(meta, isGroup = true)
