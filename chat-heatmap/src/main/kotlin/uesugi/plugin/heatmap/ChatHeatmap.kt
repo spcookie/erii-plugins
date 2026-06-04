@@ -219,7 +219,7 @@ private fun takeScreenshot(id: String): ByteArray? {
     return try {
         BrowserScraperHolder.getInstance().takeFullScreenshot(
             url = url,
-            width = 780,
+            width = 640,
             height = 640,
             quality = 100,
             type = BrowserScraper.ScreenshotType.JPEG,
