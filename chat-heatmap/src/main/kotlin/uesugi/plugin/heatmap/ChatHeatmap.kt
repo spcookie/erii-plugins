@@ -350,7 +350,7 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
                 val todayWords = mergedDaily[window.todayKey] ?: 0
                 val targetWords = mergedUsers[userId] ?: 0
                 val rank = mergedUsers.values.count { it > targetWords } + 1
-                val nickname = todayRecords.firstOrNull { it.userId == userId }?.nick ?: cachedNickname
+                val nickname = todayRecords.lastOrNull { it.userId == userId }?.nick ?: cachedNickname
 
                 val cacheDaily = mergedDaily.filterKeys { it != window.todayKey }
                 val cacheValue =
@@ -380,7 +380,7 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
     val targetWords = allUserWordCounts[userId] ?: 0
     val rank = allUserWordCounts.values.count { it > targetWords } + 1
     val totalUsers = allUserWordCounts.size
-    val nickname = allRecords.firstOrNull { it.userId == userId }?.nick ?: "用户"
+    val nickname = allRecords.lastOrNull { it.userId == userId }?.nick ?: "你"
 
     try {
         val cacheDaily = dailyCounts.filterKeys { it != window.todayKey }
