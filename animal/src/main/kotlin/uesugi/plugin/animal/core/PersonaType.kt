@@ -2677,7 +2677,7 @@ enum class PersonaType(
         require(evolutionCandidates.isNullOrEmpty().not()) {
             "Cannot find evolution candidates. personaType: ${this.name}, evolutionType: ${this.personaEvolution.type}"
         }
-        return evolutionCandidates!!.random()
+        return evolutionCandidates.random()
     }
 
     companion object {
