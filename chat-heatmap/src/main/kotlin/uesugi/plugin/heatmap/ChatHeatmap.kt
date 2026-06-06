@@ -12,10 +12,7 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
-import org.jetbrains.exposed.v1.core.and
-import org.jetbrains.exposed.v1.core.eq
-import org.jetbrains.exposed.v1.core.greaterEq
-import org.jetbrains.exposed.v1.core.lessEq
+import org.jetbrains.exposed.v1.core.*
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.thymeleaf.TemplateEngine
 import org.thymeleaf.context.Context
@@ -129,7 +126,23 @@ private data class HeatmapData(
 @Cmd(name = "heatmap", alias = ["热力图"], toolSets = ["heatmap"])
 suspend fun heatmapCmd(meta: Meta) {
     log.info { "/heatmap triggered by ${meta.senderId} in group ${meta.groupId}" }
-    generateAndSendHeatmap(meta, isGroup = false)
+
+    val arg = extractHeatmapArg(meta)
+    val targetUserId = if (arg != null) {
+        val foundUserId = findUserIdByNickname(meta.groupId, arg) ?: run {
+            log.info { "/heatmap with arg '$arg': user not found" }
+            return
+        }
+        if (foundUserId != meta.senderId && !meta.isAdmin()) {
+            log.info { "/heatmap with arg '$arg' (userId=$foundUserId) denied for non-admin ${meta.senderId}" }
+            return
+        }
+        foundUserId
+    } else {
+        meta.senderId ?: return
+    }
+
+    generateAndSendHeatmap(meta, isGroup = false, targetUserId = targetUserId)
 }
 
 @Cmd(name = "heatmap-all", alias = ["热力图全群"], toolSets = ["heatmap-all"])
@@ -159,11 +172,21 @@ suspend fun heatmapResetCmd(meta: Meta) {
 }
 
 @LLMTool(set = "heatmap")
-@LLMDesc("当用户想查看热力图或自己的聊天活跃度、发言统计、热力图时调用，发送一张个人发言热力图")
-suspend fun getMyHeatmap(): String {
+@LLMDesc("当用户想查看热力图或自己的聊天活跃度、发言统计、热力图时调用，发送一张个人发言热力图。可以指定昵称参数查看特定成员的热力图")
+suspend fun getMyHeatmap(nickname: String? = null): String {
     val meta = useToolMeta().value
-    generateAndSendHeatmap(meta, isGroup = false)
-    return "热力图已生成"
+    val targetUserId = if (nickname != null) {
+        val foundUserId = findUserIdByNickname(meta.groupId, nickname)
+            ?: return "未找到昵称 '$nickname' 对应的成员"
+        if (foundUserId != meta.senderId && !meta.isAdmin()) {
+            return "无权查看其他成员的热力图，需要管理员权限"
+        }
+        foundUserId
+    } else {
+        meta.senderId ?: return "无法获取当前用户ID"
+    }
+    generateAndSendHeatmap(meta, isGroup = false, targetUserId = targetUserId)
+    return if (nickname != null) "$nickname 的热力图已生成" else "热力图已生成"
 }
 
 @LLMTool(set = "heatmap-all")
@@ -174,9 +197,28 @@ suspend fun getGroupHeatmap(): String {
     return "全群热力图已生成"
 }
 
-private suspend fun generateAndSendHeatmap(meta: Meta, isGroup: Boolean) {
+private fun extractHeatmapArg(meta: Meta): String? {
+    val input = meta.input ?: return null
+    val withoutSlash = input.removePrefix("/")
+    val matched = (listOf("heatmap") + listOf("热力图")).firstOrNull {
+        withoutSlash.startsWith(it)
+    } ?: "heatmap"
+    return withoutSlash.removePrefix(matched).trim().takeIf { it.isNotBlank() }
+}
+
+private suspend fun findUserIdByNickname(groupId: String, nickname: String): String? {
+    val database = useDatabase()
+    val records = database.getHistory {
+        HistoryTable.selectAll().where {
+            (HistoryTable.groupId eq groupId) and (HistoryTable.nick eq nickname)
+        }.orderBy(HistoryTable.createdAt to SortOrder.DESC).limit(1)
+    }
+    return records.firstOrNull()?.userId
+}
+
+private suspend fun generateAndSendHeatmap(meta: Meta, isGroup: Boolean, targetUserId: String? = null) {
     val groupId = meta.groupId
-    val userId = meta.senderId ?: return
+    val userId = targetUserId ?: meta.senderId ?: return
     val groupIdLong = groupId.toLong()
 
     val data = if (isGroup) loadGroupHeatmapData(groupId) else loadHeatmapData(groupId, userId)
