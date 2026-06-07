@@ -21,6 +21,7 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.jdbc.selectAll
+import uesugi.common.ChatMessage
 import uesugi.common.ChatToolSet
 import uesugi.common.LLMProviderChoice
 import uesugi.common.data.HistoryTable
@@ -272,6 +273,7 @@ suspend fun seeddreamRoute(meta: Meta) {
 
 // ========== Tool ==========
 
+@ChatMessage
 @LLMTool(set = "seeddream")
 @ai.koog.agents.core.tools.annotations.LLMDescription("生成一张图片发送")
 suspend fun imageCreate(): String? {

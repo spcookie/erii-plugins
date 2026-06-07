@@ -17,6 +17,7 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import uesugi.common.BotManage
+import uesugi.common.ChatMessage
 import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.onebot.sdk.message.buildMessage
 import uesugi.spi.annotation.*
@@ -54,6 +55,7 @@ object ScopesSerializer : KSerializer<Language> {
 
 // ========== Tool ==========
 
+@ChatMessage
 @LLMTool
 @LLMDesc(
     """

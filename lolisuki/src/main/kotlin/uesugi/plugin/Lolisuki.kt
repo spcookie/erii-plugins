@@ -14,6 +14,7 @@ import kotlinx.atomicfu.AtomicBoolean
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
+import uesugi.common.ChatMessage
 import uesugi.common.ChatToolSet
 import uesugi.common.LLMProviderChoice
 import uesugi.common.event.PSFeature
@@ -104,6 +105,7 @@ suspend fun lolisukiRoute(meta: Meta) {
 
 // ========== Tool ==========
 
+@ChatMessage
 @LLMTool(set = "lolisuki")
 @LLMDesc("发送一张涩图")
 suspend fun sendSexImage(): String {

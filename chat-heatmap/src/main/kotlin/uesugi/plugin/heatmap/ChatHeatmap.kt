@@ -18,6 +18,7 @@ import org.thymeleaf.TemplateEngine
 import org.thymeleaf.context.Context
 import org.thymeleaf.templatemode.TemplateMode
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver
+import uesugi.common.ChatMessage
 import uesugi.common.data.HistoryRecord
 import uesugi.common.data.HistoryTable
 import uesugi.common.toolkit.BrowserScraper
@@ -171,6 +172,7 @@ suspend fun heatmapResetCmd(meta: Meta) {
     log.info { "/heatmap-reset executed by admin ${meta.senderId}, all cache cleared" }
 }
 
+@ChatMessage
 @LLMTool(set = "heatmap")
 @LLMDesc("当用户想查看热力图或自己的聊天活跃度、发言统计、热力图时调用，发送一张个人发言热力图。可以指定昵称参数查看特定成员的热力图")
 suspend fun getMyHeatmap(nickname: String? = null): String {
@@ -189,6 +191,7 @@ suspend fun getMyHeatmap(nickname: String? = null): String {
     return if (nickname != null) "$nickname 的热力图已生成" else "热力图已生成"
 }
 
+@ChatMessage
 @LLMTool(set = "heatmap-all")
 @LLMDesc("当用户想明确提到查看热力图全群的聊天活跃度、发言统计时调用，发送一张全群发言热力图")
 suspend fun getGroupHeatmap(): String {

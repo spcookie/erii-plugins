@@ -11,6 +11,7 @@ import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uesugi.common.BotManage
+import uesugi.common.ChatMessage
 import uesugi.spi.annotation.*
 
 private val log = KotlinLogging.logger {}
@@ -24,6 +25,7 @@ private suspend fun ensureApiBase() {
 
 // ========== Tool ==========
 
+@ChatMessage
 @LLMTool
 @LLMDesc("当用户想要搜索或点播音乐时，调用此 tool 搜索音乐并发送音乐")
 suspend fun searchMusic(keyword: String, limit: Int = 5): String? {

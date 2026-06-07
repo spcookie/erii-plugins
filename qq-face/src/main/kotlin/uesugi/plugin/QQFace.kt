@@ -8,6 +8,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import uesugi.common.ChatMessage
 import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.onebot.sdk.message.buildMessage
 import uesugi.spi.annotation.*
@@ -22,6 +23,7 @@ private val mutex = Mutex()
 
 // ========== Tool ==========
 
+@ChatMessage
 @LLMTool(set = "qq-face")
 @LLMDesc("在群聊中发送一个QQ表情，用来表达情绪或对当前对话作出反应。当发送表情比发送文字更自然时可以调用此工具。")
 suspend fun sendFace(
