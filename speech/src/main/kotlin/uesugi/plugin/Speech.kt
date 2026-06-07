@@ -84,15 +84,16 @@ suspend fun sendSpeech(
     emotion: String = "calm"
 ): String? {
     return try {
-        val config = useConfig()()
-        val apiKey = config.getString("minimax-api-key")
+        val config = useConfig()
+        val conf = config()
+        val apiKey = config.findEnv(conf.getString("minimax-api-key")) ?: ""
         if (apiKey.isBlank()) {
             return "语音合成失败：未配置 minimax-api-key"
         }
 
         val meta = useToolMeta().value
         val configKey = BotManage.getConfigKey(meta.botId)
-        val voicesCfg = config.getConfig("onebot.$configKey.voices")
+        val voicesCfg = conf.getConfig("onebot.$configKey.voices")
             ?: return "语音合成失败：未配置音色"
 
         val voiceId = when (language) {
