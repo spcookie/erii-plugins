@@ -121,7 +121,8 @@ private data class HeatmapData(
     val totalUsers: Int,
     val startDate: String,
     val endDate: String,
-    val isGroup: Boolean
+    val isGroup: Boolean,
+    val rangeMonths: Int
 )
 
 @Cmd(name = "heatmap", alias = ["热力图"], toolSets = ["heatmap"])
@@ -288,6 +289,9 @@ private data class TimeWindow(
     val yesterdayKey: String
 )
 
+private fun monthRange(startLDT: LocalDateTime, endLDT: LocalDateTime): Int =
+    (endLDT.year - startLDT.year) * 12 + (endLDT.month.number - startLDT.month.number) + 1
+
 private fun timeWindow(): TimeWindow {
     val timeZone = TimeZone.currentSystemDefault()
     val now = kotlin.time.Clock.System.now()
@@ -397,16 +401,16 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
                 val rank = mergedUsers.values.count { it > targetWords } + 1
                 val nickname = todayRecords.lastOrNull { it.userId == userId }?.nick ?: cachedNickname
 
-                val cacheDaily = mergedDaily.filterKeys { it != window.todayKey }
                 val cacheValue =
-                    "${window.todayKey}\n${nickname}\n${serializeCounts(cacheDaily)}\n${serializeCounts(mergedUsers)}"
+                    "${window.todayKey}\n${nickname}\n${serializeCounts(mergedDaily)}\n${serializeCounts(mergedUsers)}"
                 kv.set(cacheKey, cacheValue)
                 log.info { "Heatmap cache hit for $userId, loaded ${todayRecords.size} today records" }
 
                 return HeatmapData(
                     nickname, mergedDaily, totalWords, todayWords, rank, mergedUsers.size,
                     "${window.startLDT.year}/${pad(window.startLDT.month.number)}",
-                    "${window.endLDT.year}/${pad(window.endLDT.month.number)}", false
+                    "${window.endLDT.year}/${pad(window.endLDT.month.number)}", false,
+                    monthRange(window.startLDT, window.endLDT)
                 )
             }
         } catch (e: Exception) {
@@ -428,12 +432,11 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
     val nickname = allRecords.lastOrNull { it.userId == userId }?.nick ?: "你"
 
     try {
-        val cacheDaily = dailyCounts.filterKeys { it != window.todayKey }
         val cacheValue =
-            "${window.todayKey}\n${nickname}\n${serializeCounts(cacheDaily)}\n${serializeCounts(allUserWordCounts)}"
+            "${window.todayKey}\n${nickname}\n${serializeCounts(dailyCounts)}\n${serializeCounts(allUserWordCounts)}"
         kv.set(cacheKey, cacheValue)
         registerCacheKey(kv, cacheKey)
-        log.info { "Heatmap cache stored for $userId, ${cacheDaily.size} days" }
+        log.info { "Heatmap cache stored for $userId, ${dailyCounts.size} days" }
     } catch (e: Exception) {
         log.warn(e) { "Failed to store cache for $cacheKey" }
     }
@@ -441,7 +444,8 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
     return HeatmapData(
         nickname, dailyCounts, totalWords, todayWords, rank, totalUsers,
         "${window.startLDT.year}/${pad(window.startLDT.month.number)}",
-        "${window.endLDT.year}/${pad(window.endLDT.month.number)}", false
+        "${window.endLDT.year}/${pad(window.endLDT.month.number)}", false,
+        monthRange(window.startLDT, window.endLDT)
     )
 }
 
@@ -471,14 +475,14 @@ private suspend fun loadGroupHeatmapData(groupId: String): HeatmapData {
                 val todayWords = mergedDaily[window.todayKey] ?: 0
                 val totalUsers = maxOf(cachedTotalUsers, todayRecords.map { it.userId }.distinct().size)
 
-                val cacheDaily = mergedDaily.filterKeys { it != window.todayKey }
-                kv.set(cacheKey, "${window.todayKey}\n${totalUsers}\n${serializeCounts(cacheDaily)}")
+                kv.set(cacheKey, "${window.todayKey}\n${totalUsers}\n${serializeCounts(mergedDaily)}")
                 log.info { "Group heatmap cache hit for $groupId, loaded ${todayRecords.size} today records" }
 
                 return HeatmapData(
                     "全群", mergedDaily, totalWords, todayWords, 0, totalUsers,
                     "${window.startLDT.year}/${pad(window.startLDT.month.number)}",
-                    "${window.endLDT.year}/${pad(window.endLDT.month.number)}", true
+                    "${window.endLDT.year}/${pad(window.endLDT.month.number)}", true,
+                    monthRange(window.startLDT, window.endLDT)
                 )
             }
         } catch (e: Exception) {
@@ -494,10 +498,9 @@ private suspend fun loadGroupHeatmapData(groupId: String): HeatmapData {
     val totalUsers = allRecords.map { it.userId }.distinct().size
 
     try {
-        val cacheDaily = dailyCounts.filterKeys { it != window.todayKey }
-        kv.set(cacheKey, "${window.todayKey}\n${totalUsers}\n${serializeCounts(cacheDaily)}")
+        kv.set(cacheKey, "${window.todayKey}\n${totalUsers}\n${serializeCounts(dailyCounts)}")
         registerCacheKey(kv, cacheKey)
-        log.info { "Group heatmap cache stored for $groupId, ${cacheDaily.size} days" }
+        log.info { "Group heatmap cache stored for $groupId, ${dailyCounts.size} days" }
     } catch (e: Exception) {
         log.warn(e) { "Failed to store group cache for $cacheKey" }
     }
@@ -505,7 +508,8 @@ private suspend fun loadGroupHeatmapData(groupId: String): HeatmapData {
     return HeatmapData(
         "全群", dailyCounts, totalWords, todayWords, 0, totalUsers,
         "${window.startLDT.year}/${pad(window.startLDT.month.number)}",
-        "${window.endLDT.year}/${pad(window.endLDT.month.number)}", true
+        "${window.endLDT.year}/${pad(window.endLDT.month.number)}", true,
+        monthRange(window.startLDT, window.endLDT)
     )
 }
 
@@ -526,6 +530,7 @@ private fun buildHtml(data: HeatmapData, scheme: ColorScheme): String {
         setVariable("startDate", data.startDate)
         setVariable("endDate", data.endDate)
         setVariable("startDateJs", "${data.startDate.replace("/", "-")}-01")
+        setVariable("rangeMonths", data.rangeMonths)
         setVariable("totalWords", formatNum(data.totalWords))
         setVariable("todayWords", formatNum(data.todayWords))
         setVariable("isGroup", data.isGroup)

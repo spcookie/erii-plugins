@@ -180,6 +180,7 @@
 <template id="heatmap-data" th:utext="${dailyCounts}">{}</template>
 <template id="heatmap-colors" th:utext="${colors}">["#ebedf0","#9be9a8","#40c463","#30a14e","#216e39"]</template>
 <template id="heatmap-start" th:utext="${startDateJs}">2025-06-01</template>
+<template id="heatmap-range" th:utext="${rangeMonths}">6</template>
 <script>
   (() => {
     const getData = (id, fallback) => {
@@ -221,6 +222,13 @@
       d.setMonth(d.getMonth() - 6);
       return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
     });
+      const getNum = (id, fallback) => {
+          const el = document.getElementById(id);
+          if (!el || !el.content) return fallback();
+          const v = parseInt(el.content.textContent.trim(), 10);
+          return isNaN(v) || v <= 0 ? fallback() : v;
+      };
+      const rangeMonths = getNum('heatmap-range', () => 6);
     const entries = Object.keys(rawData).map(d => ({date: d, value: rawData[d]}));
     const sd = new Date(startDateStr);
     const vals = entries.map(e => e.value);
@@ -248,7 +256,7 @@
         new CalHeatmap().paint({
           data: {source: entries, x: 'date', y: 'value'},
           date: {start: sd},
-          range: 6,
+            range: rangeMonths,
           scale: {color: {type: 'threshold', range: colorsVal, domain}},
           domain: {
             type: 'month',
