@@ -33,6 +33,7 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.days
 
+
 private val REFERENCE_BLOCK = Regex(
     "---REFERENCE MESSAGE START---.*?---REFERENCE MESSAGE END---",
     RegexOption.DOT_MATCHES_ALL
@@ -122,7 +123,8 @@ private data class HeatmapData(
     val startDate: String,
     val endDate: String,
     val isGroup: Boolean,
-    val rangeMonths: Int
+    val rangeMonths: Int,
+    val totalWeeks: Int = (rangeMonths * 435) / 100
 )
 
 @Cmd(name = "heatmap", alias = ["热力图"], toolSets = ["heatmap"])
@@ -225,7 +227,7 @@ private suspend fun generateAndSendHeatmap(meta: Meta, isGroup: Boolean, targetU
     val userId = targetUserId ?: meta.senderId ?: return
     val groupIdLong = groupId.toLong()
 
-    val data = if (isGroup) loadGroupHeatmapData(groupId) else loadHeatmapData(groupId, userId)
+    val data = if (isGroup) loadGroupHeatmapData(meta.botId, groupId) else loadHeatmapData(meta.botId, groupId, userId)
 
     log.info { "Heatmap data loaded: totalWords=${data.totalWords}, days=${data.dailyCounts.size}, isGroup=$isGroup" }
 
@@ -295,9 +297,15 @@ private fun monthRange(startLDT: LocalDateTime, endLDT: LocalDateTime): Int =
 private fun timeWindow(): TimeWindow {
     val timeZone = TimeZone.currentSystemDefault()
     val now = kotlin.time.Clock.System.now()
-    val halfYearAgo = now - 183.days
     val endLDT = now.toLocalDateTime(timeZone)
-    val startLDT = halfYearAgo.toLocalDateTime(timeZone)
+    // 6 个自然月：当前月往前推 5 个月的月初
+    var startYear = endLDT.year
+    var startMonth = endLDT.month.number - 5
+    if (startMonth <= 0) {
+        startMonth += 12
+        startYear -= 1
+    }
+    val startLDT = LocalDateTime(startYear, startMonth, 1, 0, 0)
     val todayLDT = now.toLocalDateTime(timeZone)
     val yesterdayLDT = now.minus(1.days).toLocalDateTime(timeZone)
     return TimeWindow(
@@ -310,12 +318,14 @@ private fun timeWindow(): TimeWindow {
 
 private suspend fun queryHalfYearRecords(
     database: uesugi.spi.Database,
+    botMark: String,
     groupId: String,
     window: TimeWindow
 ): List<HistoryRecord> =
     database.getHistory {
         HistoryTable.selectAll().where {
-            (HistoryTable.groupId eq groupId) and
+            (HistoryTable.botMark eq botMark) and
+                    (HistoryTable.groupId eq groupId) and
                     (HistoryTable.createdAt greaterEq window.startLDT) and
                     (HistoryTable.createdAt lessEq window.endLDT)
         }
@@ -323,13 +333,15 @@ private suspend fun queryHalfYearRecords(
 
 private suspend fun queryTodayRecords(
     database: uesugi.spi.Database,
+    botMark: String,
     groupId: String,
     endLDT: LocalDateTime
 ): List<HistoryRecord> {
     val todayStart = LocalDateTime(endLDT.year, endLDT.month, endLDT.day, 0, 0)
     return database.getHistory {
         HistoryTable.selectAll().where {
-            (HistoryTable.groupId eq groupId) and
+            (HistoryTable.botMark eq botMark) and
+                    (HistoryTable.groupId eq groupId) and
                     (HistoryTable.createdAt greaterEq todayStart)
         }
     }
@@ -367,7 +379,7 @@ private suspend fun registerCacheKey(kv: Kv, key: String) {
     }
 }
 
-private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapData {
+private suspend fun loadHeatmapData(botMark: String, groupId: String, userId: String): HeatmapData {
     val database = useDatabase()
     val kv = useKv()
     val cacheKey = cacheKeyPersonal(groupId, userId)
@@ -382,7 +394,7 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
                 val cachedDaily = deserializeCounts(parts[2])
                 val cachedUsers = deserializeCounts(parts[3])
 
-                val todayRecords = queryTodayRecords(database, groupId, window.endLDT)
+                val todayRecords = queryTodayRecords(database, botMark, groupId, window.endLDT)
 
                 val mergedDaily = cachedDaily.toMutableMap()
                 for (r in todayRecords.filter { it.userId == userId }) {
@@ -418,7 +430,7 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
         }
     }
 
-    val allRecords = queryHalfYearRecords(database, groupId, window)
+    val allRecords = queryHalfYearRecords(database, botMark, groupId, window)
     val userRecords = allRecords.filter { it.userId == userId }
 
     val dailyCounts = userRecords.foldDailyCounts()
@@ -449,7 +461,7 @@ private suspend fun loadHeatmapData(groupId: String, userId: String): HeatmapDat
     )
 }
 
-private suspend fun loadGroupHeatmapData(groupId: String): HeatmapData {
+private suspend fun loadGroupHeatmapData(botMark: String, groupId: String): HeatmapData {
     val database = useDatabase()
     val kv = useKv()
     val cacheKey = cacheKeyGroup(groupId)
@@ -463,7 +475,7 @@ private suspend fun loadGroupHeatmapData(groupId: String): HeatmapData {
                 val cachedTotalUsers = parts[1].toInt()
                 val cachedDaily = deserializeCounts(parts[2])
 
-                val todayRecords = queryTodayRecords(database, groupId, window.endLDT)
+                val todayRecords = queryTodayRecords(database, botMark, groupId, window.endLDT)
 
                 val mergedDaily = cachedDaily.toMutableMap()
                 for (r in todayRecords) {
@@ -490,7 +502,7 @@ private suspend fun loadGroupHeatmapData(groupId: String): HeatmapData {
         }
     }
 
-    val allRecords = queryHalfYearRecords(database, groupId, window)
+    val allRecords = queryHalfYearRecords(database, botMark, groupId, window)
 
     val dailyCounts = allRecords.foldDailyCounts()
     val totalWords = dailyCounts.values.sum()
@@ -537,6 +549,7 @@ private fun buildHtml(data: HeatmapData, scheme: ColorScheme): String {
         setVariable("rank", data.rank)
         setVariable("totalUsers", data.totalUsers)
         setVariable("colors", colorsJson)
+        setVariable("totalWeeks", data.totalWeeks)
         setVariable("dailyCounts", dailyCountsJson)
     }
 
