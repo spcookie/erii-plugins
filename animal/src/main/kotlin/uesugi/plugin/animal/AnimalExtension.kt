@@ -1,17 +1,18 @@
 package uesugi.plugin.animal
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.*
 import org.pf4j.Extension
+import uesugi.common.BotManage
+import uesugi.onebot.sdk.client.event.onGroupMessage
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.service.DailyTaskService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.CmdExtension
 import uesugi.spi.PassiveExtension
 import uesugi.spi.PluginContext
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.seconds
 
 @Extension
 class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, AnimalArgParser, Animal> {
@@ -27,6 +28,7 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
     private lateinit var htmlRenderer: AnimalHtmlRenderer
     private lateinit var serverUrl: String
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val registeredBots = ConcurrentHashMap.newKeySet<String>()
 
     override fun onLoad(context: PluginContext) {
         this.context = context
@@ -43,8 +45,31 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
 
         registerCommandHandler()
         registerTools()
+        registerMessageRewardListeners()
+        context.scheduler.scheduleRecurrently("register-message-reward-listeners", 30.seconds) {
+            registerMessageRewardListeners()
+        }
 
         log.info { "AnimalExtension loaded" }
+    }
+
+    private fun registerMessageRewardListeners() {
+        BotManage.getAllBots().forEach { bot ->
+            if (registeredBots.add(bot.selfId)) {
+                bot.refBot.onGroupMessage { event ->
+                    if (!scope.isActive) return@onGroupMessage
+                    val groupId = event.groupId.toString()
+                    val senderId = event.userId
+                    runCatching {
+                        if (store.getAllGroupIds().contains(groupId)) {
+                            service.onUserMessage(groupId, senderId)
+                        }
+                    }.onFailure { e ->
+                        log.error(e) { "Failed to process message reward for $groupId/$senderId" }
+                    }
+                }
+            }
+        }
     }
 
     private fun registerTools() {
@@ -61,16 +86,6 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
 
     private fun registerCommandHandler() {
         context.chain { meta ->
-            // 每条消息静默触发发言奖励/打卡
-            val senderId = meta.senderId?.toLongOrNull()
-            if (senderId != null) {
-                runCatching {
-                    service.onUserMessage(meta.groupId, senderId)
-                }.onFailure { e ->
-                    log.error(e) { "Failed to process message reward for ${meta.groupId}/$senderId" }
-                }
-            }
-
             AnimalCommandHandler(
                 store = store,
                 service = service,
@@ -84,6 +99,7 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
 
     override fun onUnload() {
         dailyTaskService.stopDailyTasks()
+        context.scheduler.cancel("register-message-reward-listeners")
         scope.cancel()
         log.info { "AnimalExtension unloaded" }
     }

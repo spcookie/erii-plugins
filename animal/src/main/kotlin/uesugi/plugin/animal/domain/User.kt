@@ -327,7 +327,7 @@ class User(
     fun createLineAnimation(personaId: Long, mode: Mode): String {
         val builder = StringBuilder().openLine()
 
-        val persona = personas.find { it.id >= personaId }
+        val persona = personas.find { it.id == personaId }
             ?: throw IllegalArgumentException("Cannot find persona by id \"$personaId\"")
         builder.append(persona.toSvgForce(mode))
 

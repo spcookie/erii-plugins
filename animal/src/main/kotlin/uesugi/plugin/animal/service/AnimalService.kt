@@ -1,6 +1,8 @@
 package uesugi.plugin.animal.service
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import uesugi.plugin.animal.core.FieldType
 import uesugi.plugin.animal.core.Mode
 import uesugi.plugin.animal.core.PersonaType
@@ -10,10 +12,17 @@ import uesugi.plugin.animal.domain.request.VisibleChangeType
 import uesugi.plugin.animal.store.AnimalStore
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
 
 class AnimalService(private val store: AnimalStore) {
 
     private val log = KotlinLogging.logger {}
+    private val groupLocks = ConcurrentHashMap<String, Mutex>()
+
+    private suspend inline fun <T> withGroupLock(groupId: String, block: suspend () -> T): T {
+        val mutex = groupLocks.computeIfAbsent(groupId) { Mutex() }
+        return mutex.withLock { block() }
+    }
 
     companion object {
         const val COINS_PER_DRAW = 100
@@ -83,23 +92,20 @@ class AnimalService(private val store: AnimalStore) {
 
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
-    suspend fun registerUser(groupId: String, userId: Long, name: String): User {
-        val existingUser = store.getUser(groupId, userId)
-        if (existingUser != null) {
-            return existingUser
+    suspend fun registerUser(groupId: String, userId: Long, name: String): User = withGroupLock(groupId) {
+        store.getUser(groupId, userId) ?: run {
+            val user = User.newUser(
+                id = userId,
+                name = name,
+                contributions = emptyMap()
+            )
+
+            store.saveUser(groupId, user)
+            store.addUserId(groupId, userId)
+
+            log.info { "User $userId registered with pet in group $groupId" }
+            user
         }
-
-        val user = User.newUser(
-            id = userId,
-            name = name,
-            contributions = emptyMap()
-        )
-
-        store.saveUser(groupId, user)
-        store.addUserId(groupId, userId)
-
-        log.info { "User $userId registered with pet in group $groupId" }
-        return user
     }
 
     suspend fun getUserPets(groupId: String, userId: Long): List<Persona> {
@@ -112,7 +118,7 @@ class AnimalService(private val store: AnimalStore) {
         return user.personas.find { it.id == petId }
     }
 
-    suspend fun onUserMessage(groupId: String, userId: Long): String {
+    suspend fun onUserMessage(groupId: String, userId: Long): String = withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return "请先注册宠物，使用 /animal register"
         val today = LocalDate.now().format(dateFormatter)
 
@@ -142,7 +148,7 @@ class AnimalService(private val store: AnimalStore) {
 
         // 非奖励消息也要持久化 todayMessageCount
         store.saveUser(groupId, user)
-        return ""
+        ""
     }
 
     data class DrawResult(
@@ -157,7 +163,7 @@ class AnimalService(private val store: AnimalStore) {
         val message: String,
     )
 
-    suspend fun drawPet(groupId: String, userId: Long, count: Int): Result<DrawResult> {
+    suspend fun drawPet(groupId: String, userId: Long, count: Int): Result<DrawResult> = withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
         val drawCount = if (count == 10) 10 else 1
@@ -179,7 +185,7 @@ class AnimalService(private val store: AnimalStore) {
         store.saveUser(groupId, user)
 
         val petInfo = drawnPets.joinToString(", ") { "${it.getType()} (Lv.${it.level()})" }
-        return Result.success(
+        Result.success(
             DrawResult(
                 message = "抽宠成功！花费 $cost 金币，获得：$petInfo",
                 pets = drawnPets,
@@ -188,7 +194,7 @@ class AnimalService(private val store: AnimalStore) {
         )
     }
 
-    suspend fun sellPet(groupId: String, userId: Long, petId: Long): Result<SellResult> {
+    suspend fun sellPet(groupId: String, userId: Long, petId: Long): Result<SellResult> = withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
         if (user.personas.size <= 1) {
@@ -204,7 +210,7 @@ class AnimalService(private val store: AnimalStore) {
         user.deletePersona(petId)
 
         store.saveUser(groupId, user)
-        return Result.success(SellResult(price, petName, "售卖成功！获得 $price 金币"))
+        Result.success(SellResult(price, petName, "售卖成功！获得 $price 金币"))
     }
 
     fun calculatePetPrice(pet: Persona): Int {
@@ -222,7 +228,8 @@ class AnimalService(private val store: AnimalStore) {
         return user.coins
     }
 
-    suspend fun setFarmPet(groupId: String, userId: Long, petId: Long, visible: Boolean): Result<String> {
+    suspend fun setFarmPet(groupId: String, userId: Long, petId: Long, visible: Boolean): Result<String> =
+        withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
         return try {
@@ -234,7 +241,7 @@ class AnimalService(private val store: AnimalStore) {
         }
     }
 
-    suspend fun setField(groupId: String, userId: Long, fieldType: FieldType): Result<String> {
+    suspend fun setField(groupId: String, userId: Long, fieldType: FieldType): Result<String> = withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
         return try {
@@ -246,29 +253,35 @@ class AnimalService(private val store: AnimalStore) {
         }
     }
 
+    suspend fun clearStorage() = withGroupLock("__all__") {
+        store.clearAll()
+    }
+
     suspend fun resetDailyTasks() {
-        val groupIds = store.getAllGroupIds()
+        val groupIds = store.getAllGroupIds().sorted()
 
         for (groupId in groupIds) {
-            val userIds = store.getAllUserIds(groupId)
-            for (userId in userIds) {
-                val user = store.getUser(groupId, userId) ?: continue
+            withGroupLock(groupId) {
+                val userIds = store.getAllUserIds(groupId)
+                for (userId in userIds) {
+                    val user = store.getUser(groupId, userId) ?: continue
 
-                // 超过宽限天数未发言，固定扣除贡献度
-                val lastActive = user.lastCheckInDate
-                if (lastActive != null) {
-                    val lastDate = LocalDate.parse(lastActive, dateFormatter)
-                    val daysInactive = LocalDate.now().toEpochDay() - lastDate.toEpochDay()
-                    if (daysInactive > INACTIVE_GRACE_DAYS) {
-                        user.deductContribution(FIELD_PENALTY_ON_INACTIVE)
-                        log.info { "User $userId in group $groupId penalized for inactivity ($daysInactive days)" }
+                    // 超过宽限天数未发言，固定扣除贡献度
+                    val lastActive = user.lastCheckInDate
+                    if (lastActive != null) {
+                        val lastDate = LocalDate.parse(lastActive, dateFormatter)
+                        val daysInactive = LocalDate.now().toEpochDay() - lastDate.toEpochDay()
+                        if (daysInactive > INACTIVE_GRACE_DAYS) {
+                            user.deductContribution(FIELD_PENALTY_ON_INACTIVE)
+                            log.info { "User $userId in group $groupId penalized for inactivity ($daysInactive days)" }
+                        }
                     }
+
+                    // 重置今日消息计数
+                    user.todayMessageCount = 0
+
+                    store.saveUser(groupId, user)
                 }
-
-                // 重置今日消息计数
-                user.todayMessageCount = 0
-
-                store.saveUser(groupId, user)
             }
         }
     }

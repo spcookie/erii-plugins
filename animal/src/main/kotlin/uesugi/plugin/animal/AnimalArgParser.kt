@@ -19,6 +19,7 @@ data class AnimalContext(
     val groupId: String,
     val senderId: Long,
     val senderNick: String,
+    val isAdmin: Boolean,
     val sendMessage: (List<MessageSegment>) -> Unit,
     val createImage: (ByteArray) -> String?,
     val serverUrl: String,
@@ -32,6 +33,20 @@ private fun AnimalContext.sendCard(path: String, width: Int, height: Int) {
     sendMessage(buildMessage {
         imageBase64?.let { image("base64://$it") }
     })
+}
+
+private suspend fun AnimalContext.runRegisterCommand() {
+    val user = service.registerUser(groupId, senderId, senderNick)
+    val pet = user.personas.firstOrNull()
+    pet?.let {
+        sendCard("/card/pet/${groupId}/${senderId}/${it.id}?type=register", 400, 430)
+    } ?: sendMessage(buildMessage { text("注册失败，请稍后重试") })
+}
+
+private suspend fun AnimalContext.ensureRegistered() {
+    if (service.getUserPets(groupId, senderId).isEmpty()) {
+        runRegisterCommand()
+    }
 }
 
 class AnimalArgParser : ArgParserHolder<AnimalContext>() {
@@ -50,6 +65,7 @@ class AnimalArgParser : ArgParserHolder<AnimalContext>() {
             Sell(),
             SetFarm(),
             Field(),
+            Reset(),
             Help(),
             Status()
         )
@@ -64,12 +80,7 @@ class Register : CliktCommand("register") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            val user = ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
-            val pet = user.personas.firstOrNull()
-
-            pet?.let {
-                ctx.sendCard("/card/pet/${ctx.groupId}/${ctx.senderId}/${it.id}?type=register", 400, 430)
-            } ?: ctx.sendMessage(buildMessage { text("注册失败，请稍后重试") })
+            ctx.runRegisterCommand()
         }
     }
 }
@@ -78,7 +89,7 @@ class ListPets : CliktCommand("list") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             ctx.sendCard("/card/list/${ctx.groupId}/${ctx.senderId}", 600, 650)
         }
     }
@@ -88,7 +99,7 @@ class Farm : CliktCommand("farm") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             ctx.sendCard("/card/farm/${ctx.groupId}/${ctx.senderId}", 600, 370)
         }
     }
@@ -98,7 +109,7 @@ class Coins : CliktCommand("coins") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             ctx.sendCard("/card/coins/${ctx.groupId}/${ctx.senderId}", 400, 210)
         }
     }
@@ -111,7 +122,7 @@ class Line : CliktCommand("line") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             val resolvedId = petId ?: run {
                 val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
                 pets.firstOrNull()?.id ?: run {
@@ -136,7 +147,7 @@ class Draw : CliktCommand("draw") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             val result = ctx.service.drawPet(ctx.groupId, ctx.senderId, count)
             result.onSuccess { drawResult ->
                 val ids = drawResult.pets.joinToString(",") { it.id.toString() }
@@ -155,7 +166,7 @@ class Sell : CliktCommand("sell") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             val resolvedId = petIdArg?.toLongOrNull() ?: run {
                 val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
                 pets.firstOrNull()?.id ?: run {
@@ -185,7 +196,7 @@ class SetFarm : CliktCommand("setfarm") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             val resolvedId = petIdArg?.toLongOrNull() ?: run {
                 val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
                 pets.firstOrNull()?.id ?: run {
@@ -213,7 +224,7 @@ class FieldList : CliktCommand("list") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             ctx.sendCard("/card/fields/${ctx.groupId}/${ctx.senderId}", 500, 650)
         }
     }
@@ -226,7 +237,7 @@ class FieldSet : CliktCommand("set") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             if (fieldType.isEmpty()) {
                 ctx.sendMessage(buildMessage { text("请指定背景类型") })
                 return@runBlocking
@@ -243,11 +254,25 @@ class FieldSet : CliktCommand("set") {
     }
 }
 
+class Reset : CliktCommand("reset") {
+    override fun run() {
+        val ctx = currentContext.findObject<AnimalContext>() ?: return
+        runBlocking {
+            if (!ctx.isAdmin) {
+                ctx.sendMessage(buildMessage { text("权限不足，仅管理员可执行 reset") })
+                return@runBlocking
+            }
+            ctx.service.clearStorage()
+            ctx.sendMessage(buildMessage { text("已清理所有 animal 数据") })
+        }
+    }
+}
+
 class Help : CliktCommand("help") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             ctx.sendCard("/card/help/${ctx.groupId}/${ctx.senderId}", 500, 520)
         }
     }
@@ -257,7 +282,7 @@ class Status : CliktCommand("status") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.ensureRegistered()
             ctx.sendCard("/card/status/${ctx.groupId}/${ctx.senderId}", 500, 460)
         }
     }

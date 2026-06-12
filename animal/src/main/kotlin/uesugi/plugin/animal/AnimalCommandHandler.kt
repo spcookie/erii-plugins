@@ -8,6 +8,7 @@ import uesugi.onebot.sdk.message.buildMessage
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.Meta
+import uesugi.spi.isAdmin
 
 class AnimalCommandHandler(
     private val store: AnimalStore,
@@ -23,7 +24,8 @@ class AnimalCommandHandler(
             meta = meta,
             store = store,
             service = service,
-            serverUrl = serverUrl
+            serverUrl = serverUrl,
+            isAdmin = meta.isAdmin()
         )
 
         return ctx.copy(

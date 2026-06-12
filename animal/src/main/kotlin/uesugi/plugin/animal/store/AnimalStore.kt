@@ -99,6 +99,19 @@ class AnimalStore(private val kv: Kv) {
         }
     }
 
+    suspend fun clearAll() {
+        val groupIds = getAllGroupIds().toList()
+        for (groupId in groupIds) {
+            val userIds = getAllUserIds(groupId).toList()
+            for (userId in userIds) {
+                kv.delete(userKey(groupId, userId))
+            }
+            kv.delete(userIdsKey(groupId))
+        }
+        kv.delete(GROUP_IDS_KEY)
+        log.info { "Cleared all animal storage data" }
+    }
+
     @Serializable
     data class GroupIds(val ids: MutableSet<String> = mutableSetOf())
 

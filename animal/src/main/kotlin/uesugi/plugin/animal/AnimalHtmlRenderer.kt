@@ -1,5 +1,6 @@
 package uesugi.plugin.animal
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.response.*
@@ -15,7 +16,7 @@ class AnimalHtmlRenderer(
     private val context: PluginContext
 ) {
 
-    private val dateFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
+    private val log = KotlinLogging.logger {}
 
     private inline fun Route.cardRoute(
         path: String,
@@ -251,6 +252,8 @@ class AnimalHtmlRenderer(
 
     suspend fun getFarmCardHtml(groupId: String, userId: Long): String? {
         val user = store.getUser(groupId, userId) ?: return null
+        val petsInfo = user.personas.joinToString(", ") { "#${it.id}:${it.getType().name}(v=${it.visible})" }
+        log.info { "[farm] group=$groupId user=$userId personas=${user.personas.size} [$petsInfo]" }
         val svg = user.createFarmAnimation()
 
         return swissBase(
@@ -422,8 +425,7 @@ class AnimalHtmlRenderer(
 
     // === Status card ===
 
-    suspend fun getStatusCardHtml(groupId: String, userId: Long): String? {
-        val user = store.getUser(groupId, userId) ?: return null
+    suspend fun getStatusCardHtml(groupId: String, userId: Long): String {
         val stats = service.getDailyStats(groupId, userId)
 
         val checkInStatus = if (stats.checkedInToday) "已打卡" else "未打卡"

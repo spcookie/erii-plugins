@@ -15,7 +15,8 @@ object AnimalContextFactory {
         meta: Meta,
         store: AnimalStore,
         service: AnimalService,
-        serverUrl: String
+        serverUrl: String,
+        isAdmin: Boolean,
     ): AnimalContext {
         val userId = meta.senderId?.toLongOrNull() ?: 0L
         val senderNick = meta.senderId ?: "User"
@@ -26,6 +27,7 @@ object AnimalContextFactory {
             groupId = meta.groupId,
             senderId = userId,
             senderNick = senderNick,
+            isAdmin = isAdmin,
             sendMessage = { msg ->
                 runBlocking {
                     meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), msg)
