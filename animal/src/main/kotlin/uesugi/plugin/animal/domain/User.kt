@@ -73,8 +73,9 @@ class User(
 
     fun addPersona(personaType: PersonaType): Persona {
         val persona = Persona(
+            id = nextPersonaId(),
             type = personaType,
-            level = 0,
+            level = Level(0),
             visible = personas.size < MAX_PERSONA_COUNT,
             user = this,
         )
@@ -90,15 +91,14 @@ class User(
      * 自动合并：如果同类型宠物超过3只，合并最低等级和最高等级的宠物
      */
     private fun autoMergeIfNeeded(personaType: PersonaType) {
-        val sameTypePersonas = personas.filter { it.getType() == personaType }
-        if (sameTypePersonas.size > MAX_SAME_TYPE_COUNT) {
-            // 按等级排序，最低和最高合并
+        while (true) {
+            val sameTypePersonas = personas.filter { it.getType() == personaType }
+            if (sameTypePersonas.size <= MAX_SAME_TYPE_COUNT) break
             val sorted = sameTypePersonas.sortedBy { it.level() }
             val lowest = sorted.first()
             val highest = sorted.last()
-            if (lowest.id != highest.id) {
-                mergePersona(highest.id, lowest.id)
-            }
+            if (lowest.id == highest.id) break
+            mergePersona(highest.id, lowest.id)
         }
     }
 
@@ -166,7 +166,7 @@ class User(
         val increasePersona = personas.first { it.id == increasePersonaId }
         val deletePersona = personas.first { it.id == deletePersonaId }
 
-        increasePersona.level.value += max(deletePersona.level.value / 2, 1)
+        increasePersona.level.value += max(deletePersona.level.value * 4 / 5, 3L)
 
         deletePersona(deletePersona.id)
 
@@ -182,7 +182,7 @@ class User(
         val deletePersonas = personas.filter { it.id in deletePersonaIds }
 
         val increaseLevel = deletePersonas.sumOf { deletePersona ->
-            max(deletePersona.level() / 2, 1)
+            max(deletePersona.level() * 4 / 5, 3L)
         }
 
         increasePersona.level.value += increaseLevel
@@ -250,10 +250,8 @@ class User(
                     currentYearContribution
                 }
 
-        val newContribution = contribution - currentYearContribution.contribution
-
-        currentYearContribution.contribution += newContribution
-        lastPersonaGivePoint += newContribution
+        currentYearContribution.contribution += contribution
+        lastPersonaGivePoint += contribution
         currentYearContribution.lastUpdatedContribution = Instant.now()
         levelUpPersonas(currentYearContribution.contribution)
 
@@ -263,7 +261,10 @@ class User(
         // 自动解锁背景检查
         autoUnlockFieldIfNeeded()
 
-        return newContribution
+        // 自动送宠检查
+        giveNewPersona()
+
+        return contribution
     }
 
     fun deductContribution(amount: Int) {
@@ -309,12 +310,15 @@ class User(
 
     private fun getPersona(personaType: PersonaType): Persona {
         return Persona(
+            id = nextPersonaId(),
             type = personaType,
-            level = 0,
+            level = Level(0),
             visible = personas.size < MAX_PERSONA_COUNT,
             user = this,
         )
     }
+
+    private fun nextPersonaId(): Long = (personas.maxOfOrNull { it.id } ?: 0L) + 1
 
     fun increaseVisitCount() {
         visit += 1
@@ -499,13 +503,14 @@ class User(
         private fun createPersonas(contributions: Map<Int, Int>): MutableList<Persona> {
             val totalContributionCount = totalContributionCount(contributions)
             val personas = mutableListOf<Persona>()
+            var nextId = 1L
             repeat(
                 min(
                     MAX_INIT_PERSONA_COUNT,
                     max((totalContributionCount / FOR_INIT_PERSONA_COUNT), 1)
                 ).toInt()
             ) {
-                personas.add(Persona(PersonaType.random(), 0, true))
+                personas.add(Persona(nextId++, PersonaType.random(), Level(0), true))
             }
             return personas
         }

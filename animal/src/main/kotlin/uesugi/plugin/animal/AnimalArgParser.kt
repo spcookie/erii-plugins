@@ -22,8 +22,17 @@ data class AnimalContext(
     val sendMessage: (List<MessageSegment>) -> Unit,
     val createImage: (ByteArray) -> String?,
     val serverUrl: String,
-    val takeScreenshot: (String) -> ByteArray?
+    val takeScreenshot: (String, Int, Int) -> ByteArray?
 )
+
+private fun AnimalContext.sendCard(path: String, width: Int, height: Int) {
+    val url = "$serverUrl$path"
+    val screenshot = takeScreenshot(url, width, height)
+    val imageBase64 = screenshot?.let { createImage(it) }
+    sendMessage(buildMessage {
+        imageBase64?.let { image("base64://$it") }
+    })
+}
 
 class AnimalArgParser : ArgParserHolder<AnimalContext>() {
 
@@ -40,7 +49,9 @@ class AnimalArgParser : ArgParserHolder<AnimalContext>() {
             Draw(),
             Sell(),
             SetFarm(),
-            Field()
+            Field(),
+            Help(),
+            Status()
         )
     }
 
@@ -55,19 +66,10 @@ class Register : CliktCommand("register") {
         runBlocking {
             val user = ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
             val pet = user.personas.firstOrNull()
-            val petTypeName = pet?.getType()?.name ?: "未知宠物"
-
-            ctx.sendMessage(buildMessage { text("注册成功！你获得了 $petTypeName！") })
 
             pet?.let {
-                val url = "${ctx.serverUrl}/pet/${ctx.groupId}/${ctx.senderId}/${it.id}"
-                val screenshot = ctx.takeScreenshot(url)
-                val imageBase64 = screenshot?.let { ctx.createImage(it) }
-                ctx.sendMessage(buildMessage {
-                    text(url)
-                    imageBase64?.let { image("base64://$it") }
-                })
-            }
+                ctx.sendCard("/card/pet/${ctx.groupId}/${ctx.senderId}/${it.id}?type=register", 400, 430)
+            } ?: ctx.sendMessage(buildMessage { text("注册失败，请稍后重试") })
         }
     }
 }
@@ -76,33 +78,8 @@ class ListPets : CliktCommand("list") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
-            if (pets.isEmpty()) {
-                ctx.sendMessage(buildMessage { text("你还没有宠物") })
-                return@runBlocking
-            }
-            val petList = pets.joinToString("\n") { pet ->
-                val price = ctx.service.calculatePetPrice(pet)
-                "• [${pet.id}] ${pet.getType().name} Lv.${pet.level()} $:$price"
-            }
-            val user = ctx.store.getUser(ctx.groupId, ctx.senderId)
-            val url = "${ctx.serverUrl}/list/${ctx.groupId}/${ctx.senderId}"
-            val screenshot = ctx.takeScreenshot(url)
-            val imageBase64 = screenshot?.let { ctx.createImage(it) }
-            ctx.sendMessage(buildMessage {
-                text(
-                    """
-                |你的宠物（共 ${pets.size} 只）:
-                |$petList
-                |金币: ${user?.coins ?: 0}
-                |累计贡献度: ${user?.contributionCount() ?: 0}
-            """.trimMargin()
-                )
-            })
-            ctx.sendMessage(buildMessage {
-                text(url)
-                imageBase64?.let { image("base64://$it") }
-            })
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.sendCard("/card/list/${ctx.groupId}/${ctx.senderId}", 600, 650)
         }
     }
 }
@@ -111,29 +88,8 @@ class Farm : CliktCommand("farm") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            val user = ctx.store.getUser(ctx.groupId, ctx.senderId) ?: run {
-                ctx.sendMessage(buildMessage { text("你还没有注册宠物") })
-                return@runBlocking
-            }
-
-            val url = "${ctx.serverUrl}/farm/${ctx.groupId}/${ctx.senderId}"
-            val screenshot = ctx.takeScreenshot(url)
-            val imageBase64 = screenshot?.let { ctx.createImage(it) }
-            ctx.sendMessage(buildMessage {
-                text(
-                    """
-                |农场预览:
-                |用户名: ${user.getName()}
-                |宠物数: ${user.personas.size}
-                |累计贡献: ${user.contributionCount()}
-                |背景: ${user.getSelectedField().name}
-            """.trimMargin()
-                )
-            })
-            ctx.sendMessage(buildMessage {
-                text(url)
-                imageBase64?.let { image("base64://$it") }
-            })
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.sendCard("/card/farm/${ctx.groupId}/${ctx.senderId}", 600, 370)
         }
     }
 }
@@ -142,8 +98,8 @@ class Coins : CliktCommand("coins") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            val coins = ctx.service.getCoins(ctx.groupId, ctx.senderId)
-            ctx.sendMessage(buildMessage { text("你当前有 $coins 金币") })
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.sendCard("/card/coins/${ctx.groupId}/${ctx.senderId}", 400, 210)
         }
     }
 }
@@ -155,30 +111,20 @@ class Line : CliktCommand("line") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            val pet = ctx.service.viewPet(ctx.groupId, ctx.senderId, petId ?: 0L) ?: run {
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            val resolvedId = petId ?: run {
+                val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
+                pets.firstOrNull()?.id ?: run {
+                    ctx.sendMessage(buildMessage { text("你还没有宠物") })
+                    return@runBlocking
+                }
+            }
+            val pet = ctx.service.viewPet(ctx.groupId, ctx.senderId, resolvedId) ?: run {
                 ctx.sendMessage(buildMessage { text("找不到该宠物") })
                 return@runBlocking
             }
-            val canEvolve = pet.getType().personaEvolution.weight > 0
-            val evolutionInfo = if (canEvolve) "可进化！" else "不可进化"
 
-            val url = "${ctx.serverUrl}/pet/${ctx.groupId}/${ctx.senderId}/${pet.id}"
-            val screenshot = ctx.takeScreenshot(url)
-            val imageBase64 = screenshot?.let { ctx.createImage(it) }
-            ctx.sendMessage(buildMessage {
-                text(
-                    """
-                |宠物详情:
-                |类型: ${pet.getType().name}
-                |等级: Lv.${pet.level()}
-                |$evolutionInfo
-            """.trimMargin()
-                )
-            })
-            ctx.sendMessage(buildMessage {
-                text(url)
-                imageBase64?.let { image("base64://$it") }
-            })
+            ctx.sendCard("/card/pet/${ctx.groupId}/${ctx.senderId}/${pet.id}", 400, 430)
         }
     }
 }
@@ -190,21 +136,43 @@ class Draw : CliktCommand("draw") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
             val result = ctx.service.drawPet(ctx.groupId, ctx.senderId, count)
-            ctx.sendMessage(buildMessage { text(result.getOrElse { "抽宠失败：${it.message}" }) })
+            result.onSuccess { drawResult ->
+                val ids = drawResult.pets.joinToString(",") { it.id.toString() }
+                val height = if (drawResult.pets.size > 1) 600 else 420
+                ctx.sendCard("/card/draw/${ctx.groupId}/${ctx.senderId}?ids=$ids&cost=${drawResult.cost}", 500, height)
+            }.onFailure {
+                ctx.sendMessage(buildMessage { text("抽宠失败：${it.message}") })
+            }
         }
     }
 }
 
 class Sell : CliktCommand("sell") {
     private val petIdArg: String? by argument().optional()
-    val petId: Long get() = petIdArg?.toLongOrNull() ?: 0L
 
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            val result = ctx.service.sellPet(ctx.groupId, ctx.senderId, petId)
-            ctx.sendMessage(buildMessage { text(result.getOrElse { "售卖失败：$it" }) })
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            val resolvedId = petIdArg?.toLongOrNull() ?: run {
+                val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
+                pets.firstOrNull()?.id ?: run {
+                    ctx.sendMessage(buildMessage { text("你还没有宠物") })
+                    return@runBlocking
+                }
+            }
+            val result = ctx.service.sellPet(ctx.groupId, ctx.senderId, resolvedId)
+            result.onSuccess { sellResult ->
+                ctx.sendCard(
+                    "/card/sell/${ctx.groupId}/${ctx.senderId}?price=${sellResult.price}&name=${sellResult.petName}",
+                    400,
+                    260
+                )
+            }.onFailure {
+                ctx.sendMessage(buildMessage { text("售卖失败：${it.message}") })
+            }
         }
     }
 }
@@ -212,14 +180,21 @@ class Sell : CliktCommand("sell") {
 class SetFarm : CliktCommand("setfarm") {
     private val petIdArg: String? by argument().optional()
     private val visibleArg: String? by argument().optional()
-    val petId: Long get() = petIdArg?.toLongOrNull() ?: 0L
     val visible: Boolean get() = visibleArg?.lowercase()?.let { it != "off" && it != "false" && it != "0" } ?: true
 
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            val result = ctx.service.setFarmPet(ctx.groupId, ctx.senderId, petId, visible)
-            ctx.sendMessage(buildMessage { text(result.getOrElse { "设置失败：$it" }) })
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            val resolvedId = petIdArg?.toLongOrNull() ?: run {
+                val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
+                pets.firstOrNull()?.id ?: run {
+                    ctx.sendMessage(buildMessage { text("你还没有宠物") })
+                    return@runBlocking
+                }
+            }
+            val result = ctx.service.setFarmPet(ctx.groupId, ctx.senderId, resolvedId, visible)
+            ctx.sendMessage(buildMessage { text(result.getOrElse { "设置失败：${it.message}" }) })
         }
     }
 }
@@ -238,24 +213,8 @@ class FieldList : CliktCommand("list") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
-            val user = ctx.store.getUser(ctx.groupId, ctx.senderId) ?: run {
-                ctx.sendMessage(buildMessage { text("用户不存在") })
-                return@runBlocking
-            }
-            val fields = user.fields
-            val selectedField = user.getSelectedField()
-            val fieldList = fields.joinToString("\n") { field ->
-                val marker = if (field.fieldType == selectedField) " [当前]" else ""
-                "• ${field.fieldType.name}$marker"
-            }
-            ctx.sendMessage(buildMessage {
-                text(
-                    """
-                |已解锁的背景（共 ${fields.size} 个）:
-                |$fieldList
-            """.trimMargin()
-                )
-            })
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.sendCard("/card/fields/${ctx.groupId}/${ctx.senderId}", 500, 650)
         }
     }
 }
@@ -267,18 +226,39 @@ class FieldSet : CliktCommand("set") {
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
             if (fieldType.isEmpty()) {
                 ctx.sendMessage(buildMessage { text("请指定背景类型") })
                 return@runBlocking
             }
             val field = try {
                 FieldType.valueOf(fieldType.uppercase())
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 ctx.sendMessage(buildMessage { text("未知的背景类型: $fieldType") })
                 return@runBlocking
             }
             val result = ctx.service.setField(ctx.groupId, ctx.senderId, field)
-            ctx.sendMessage(buildMessage { text(result.getOrElse { "设置失败：$it" }) })
+            ctx.sendMessage(buildMessage { text(result.getOrElse { "设置失败：${it.message}" }) })
+        }
+    }
+}
+
+class Help : CliktCommand("help") {
+    override fun run() {
+        val ctx = currentContext.findObject<AnimalContext>() ?: return
+        runBlocking {
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.sendCard("/card/help/${ctx.groupId}/${ctx.senderId}", 500, 520)
+        }
+    }
+}
+
+class Status : CliktCommand("status") {
+    override fun run() {
+        val ctx = currentContext.findObject<AnimalContext>() ?: return
+        runBlocking {
+            ctx.service.registerUser(ctx.groupId, ctx.senderId, ctx.senderNick)
+            ctx.sendCard("/card/status/${ctx.groupId}/${ctx.senderId}", 500, 460)
         }
     }
 }

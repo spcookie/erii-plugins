@@ -3,7 +3,6 @@ package uesugi.plugin.animal.domain
 import com.fasterxml.jackson.annotation.JsonIgnore
 import kotlinx.serialization.Serializable
 import uesugi.plugin.animal.core.FieldType
-import uesugi.plugin.animal.core.IdGenerator
 
 @Serializable
 class Field(
@@ -49,7 +48,7 @@ class Field(
     companion object {
         fun from(user: User, fieldType: FieldType): Field {
             return Field(
-                id = IdGenerator.generate(),
+                id = 0L,
                 fieldType = fieldType,
                 isChoose = false,
                 user = user,

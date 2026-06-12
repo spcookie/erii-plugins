@@ -25,12 +25,12 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
     private lateinit var service: AnimalService
     private lateinit var dailyTaskService: DailyTaskService
     private lateinit var htmlRenderer: AnimalHtmlRenderer
+    private lateinit var serverUrl: String
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
-    private val serverPort = 8888
 
     override fun onLoad(context: PluginContext) {
         this.context = context
+        this.serverUrl = context.server.url.buildString()
 
         store = AnimalStore(context.kv)
         service = AnimalService(store)
@@ -38,7 +38,7 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
         dailyTaskService = DailyTaskService(store, service, context.scheduler)
         dailyTaskService.startDailyTasks()
 
-        htmlRenderer = AnimalHtmlRenderer(store, context)
+        htmlRenderer = AnimalHtmlRenderer(store, service, context)
         htmlRenderer.registerHtmlRoutes()
 
         registerCommandHandler()
@@ -53,8 +53,7 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
                 AnimalToolSet(
                     store,
                     service,
-                    serverPort,
-                    context.server.url.pathSegments.joinToString("/", "/"),
+                    serverUrl = serverUrl
                 )
             }
         }
@@ -62,11 +61,20 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
 
     private fun registerCommandHandler() {
         context.chain { meta ->
+            // 每条消息静默触发发言奖励/打卡
+            val senderId = meta.senderId?.toLongOrNull()
+            if (senderId != null) {
+                runCatching {
+                    service.onUserMessage(meta.groupId, senderId)
+                }.onFailure { e ->
+                    log.error(e) { "Failed to process message reward for ${meta.groupId}/$senderId" }
+                }
+            }
+
             AnimalCommandHandler(
                 store = store,
                 service = service,
-                serverPort = serverPort,
-                serverBasePath = context.server.url.pathSegments.joinToString("/", "/"),
+                serverUrl = serverUrl,
                 scope = scope
             ).handleWithError(meta) { ctx ->
                 meta.parser(ctx)

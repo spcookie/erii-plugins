@@ -4,6 +4,7 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import com.github.ajalt.clikt.core.main
 import io.github.oshai.kotlinlogging.KotlinLogging
+import uesugi.common.ChatMessage
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.MetaToolSet
@@ -11,8 +12,7 @@ import uesugi.spi.MetaToolSet
 class AnimalToolSet(
     private val store: AnimalStore,
     private val service: AnimalService,
-    private val serverPort: Int,
-    private val serverBasePath: String,
+    private val serverUrl: String,
 ) : MetaToolSet {
 
     private val log = KotlinLogging.logger {}
@@ -22,8 +22,7 @@ class AnimalToolSet(
             meta = MetaToolSet.meta,
             store = store,
             service = service,
-            serverPort = serverPort,
-            serverBasePath = serverBasePath
+            serverUrl = serverUrl
         )
     }
 
@@ -40,48 +39,56 @@ class AnimalToolSet(
         }
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("注册用户，获取一只随机宠物")
     fun registerAnimal(): String? {
         return runCommand(listOf("register"))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("查看用户的宠物列表")
     fun listAnimals(): String? {
         return runCommand(listOf("list"))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("查看宠物农场")
     fun viewFarm(): String? {
         return runCommand(listOf("farm"))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("查看单只宠物的详细信息，需要宠物ID参数")
     fun viewAnimal(petId: Long): String? {
         return runCommand(listOf("line", petId.toString()))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("使用金币抽宠物，100金币抽1次，1000金币抽10次")
     fun drawAnimal(count: Int = 1): String? {
         return runCommand(listOf("draw", count.toString()))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("查看用户金币余额")
     fun viewCoins(): String? {
         return runCommand(listOf("coins"))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("售卖宠物，需要宠物ID参数")
     fun sellAnimal(petId: Long): String? {
         return runCommand(listOf("sell", petId.toString()))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("设置农场显示的宠物，visible=true显示，visible=false隐藏")
     fun setFarmPet(petId: Long, visible: Boolean): String? {
@@ -89,15 +96,31 @@ class AnimalToolSet(
         return runCommand(listOf("setfarm", petId.toString(), visibleStr))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("查看用户已解锁的背景列表")
     fun listFields(): String? {
         return runCommand(listOf("field", "list"))
     }
 
+    @ChatMessage
     @Tool
     @LLMDescription("设置背景，需要背景类型参数如 SNOWY_FIELD")
     fun setField(fieldType: String): String? {
         return runCommand(listOf("field", "set", fieldType))
+    }
+
+    @ChatMessage
+    @Tool
+    @LLMDescription("查看宠物游戏帮助和规则说明")
+    fun help(): String? {
+        return runCommand(listOf("help"))
+    }
+
+    @ChatMessage
+    @Tool
+    @LLMDescription("查看今日发言、贡献度、金币、惩罚等状态追踪")
+    fun status(): String? {
+        return runCommand(listOf("status"))
     }
 }

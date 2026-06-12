@@ -1304,11 +1304,6 @@ enum class PersonaType(
                     "*{usernamex}",
                     (15 + (-3 * name.length)).toString()
                 )
-                .replace("*{username}", name.toSvg(14.0, 25.0))
-                .replace(
-                    "*{usernamex}",
-                    (15 + (-3 * name.length)).toString()
-                )
         }
 
         override fun act(id: Long, flippedWidth: Double): String =
@@ -2558,7 +2553,7 @@ enum class PersonaType(
             .toString()
     },
 
-    RUDOLPH(0.001 * 5) { // 이벤트 기간 5배 이벤트
+    RUDOLPH(0.005) {
         override fun loadSvg(name: String, animationId: Long, level: Long, mode: Mode): String {
             return rudolphSvg.replace("*{act}", act(animationId))
                 .replace("*{id}", animationId.toString())
@@ -2592,10 +2587,12 @@ enum class PersonaType(
     }
 
     private fun loadDropRate(): String {
-        val allPersonaCount = personas.filter { it.weight > 0.0 }.size
         val personaCount = (weight * 1000).toInt()
-
-        val dropRateTemp = (personaCount.toDouble() / allPersonaCount.toDouble()) * 100.0
+        if (personaCount == 0) {
+            this.dropRate = "0%"
+            return dropRate!!
+        }
+        val dropRateTemp = (personaCount.toDouble() / maxWeight.toDouble()) * 100.0
         this.dropRate = if (dropRateTemp < 1.0) {
             "${dropRateFormat.format(dropRateTemp)}%"
         } else {

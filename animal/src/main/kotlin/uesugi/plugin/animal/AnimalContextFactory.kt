@@ -1,10 +1,8 @@
 package uesugi.plugin.animal
 
 import kotlinx.coroutines.runBlocking
-import uesugi.common.BotManage
 import uesugi.common.toolkit.BrowserScraper
 import uesugi.common.toolkit.BrowserScraperHolder
-import uesugi.common.toolkit.ConfigHolder
 import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
@@ -17,16 +15,8 @@ object AnimalContextFactory {
         meta: Meta,
         store: AnimalStore,
         service: AnimalService,
-        serverPort: Int,
-        serverBasePath: String
+        serverUrl: String
     ): AnimalContext {
-        val botId = meta.botId
-        val configKey = BotManage.getConfigKey(botId)
-        val botConfig = ConfigHolder.getOnebotBots()[configKey]
-
-        val serverHost = botConfig?.serverHost ?: "hostmachine"
-        val externalHost = botConfig?.externalHost ?: serverHost
-
         val userId = meta.senderId?.toLongOrNull() ?: 0L
         val senderNick = meta.senderId ?: "User"
 
@@ -44,16 +34,16 @@ object AnimalContextFactory {
             createImage = { bytes ->
                 Base64.getEncoder().encodeToString(bytes)
             },
-            serverUrl = "http://${externalHost}:${serverPort}${serverBasePath}",
-            takeScreenshot = { url ->
+            serverUrl = serverUrl,
+            takeScreenshot = { url, width, height ->
                 runCatching {
-                    val playwrightUrl = url.replace("http://${externalHost}", "http://${serverHost}")
                     BrowserScraperHolder.getInstance().takeFullScreenshot(
-                        url = playwrightUrl,
-                        width = 100,
-                        height = 30,
+                        url = url,
+                        width = width,
+                        height = height,
                         quality = 100,
-                        type = BrowserScraper.ScreenshotType.JPEG
+                        type = BrowserScraper.ScreenshotType.PNG,
+                        scaleFactor = 2.0,
                     )
                 }.getOrNull()
             }

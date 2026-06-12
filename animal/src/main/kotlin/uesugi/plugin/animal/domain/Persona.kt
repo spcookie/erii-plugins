@@ -3,7 +3,6 @@ package uesugi.plugin.animal.domain
 import com.fasterxml.jackson.annotation.JsonIgnore
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import uesugi.plugin.animal.core.IdGenerator
 import uesugi.plugin.animal.core.Mode
 import uesugi.plugin.animal.core.PersonaEvolution
 import uesugi.plugin.animal.core.PersonaType
@@ -25,25 +24,6 @@ class Persona(
     @JsonIgnore
     var user: User? = null,
 ) {
-
-    constructor(
-        type: PersonaType,
-        level: Long,
-        visible: Boolean
-    ) : this(id = IdGenerator.generate(), type = type, level = Level(level), visible = visible)
-
-    constructor(
-        type: PersonaType,
-        level: Long,
-        visible: Boolean,
-        user: User,
-    ) : this(
-        id = IdGenerator.generate(),
-        type = type,
-        level = Level(level),
-        visible = visible,
-        user = user
-    )
 
     fun getType() = this.type
 

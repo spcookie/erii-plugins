@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import uesugi.onebot.sdk.client.api.sendGroupMsg
+import uesugi.onebot.sdk.message.buildMessage
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.Meta
@@ -11,9 +12,8 @@ import uesugi.spi.Meta
 class AnimalCommandHandler(
     private val store: AnimalStore,
     private val service: AnimalService,
-    private val serverPort: Int,
-    private val serverBasePath: String,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val serverUrl: String
 ) {
 
     private val log = KotlinLogging.logger {}
@@ -23,8 +23,7 @@ class AnimalCommandHandler(
             meta = meta,
             store = store,
             service = service,
-            serverPort = serverPort,
-            serverBasePath = serverBasePath
+            serverUrl = serverUrl
         )
 
         return ctx.copy(
@@ -42,6 +41,13 @@ class AnimalCommandHandler(
             parser(ctx)
         } catch (e: Exception) {
             log.error(e) { "Error handling command" }
+            scope.launch {
+                runCatching {
+                    meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), buildMessage {
+                        text("执行失败：${e.message}")
+                    })
+                }
+            }
         }
     }
 }

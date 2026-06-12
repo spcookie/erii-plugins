@@ -9,5 +9,5 @@ data class Contribution(
     val year: Int,
     var contribution: Int,
     @Contextual
-    var lastUpdatedContribution: Instant,
+    var lastUpdatedContribution: Instant = Instant.now(),
 )

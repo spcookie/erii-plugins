@@ -10,19 +10,75 @@ import uesugi.plugin.animal.domain.request.VisibleChangeType
 import uesugi.plugin.animal.store.AnimalStore
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import kotlin.math.max
 
 class AnimalService(private val store: AnimalStore) {
 
     private val log = KotlinLogging.logger {}
 
     companion object {
-        private const val COINS_PER_DRAW = 100
-        private const val COINS_PER_10_DRAW = 1000
-        private const val CONTRIBUTION_PER_CHECK_IN = 10
-        private const val CONTRIBUTION_PER_10_MESSAGES = 10
-        private const val MESSAGES_PER_CONTRIBUTION = 10
-        private const val FIELD_PENALTY_ON_INACTIVE = 50
+        const val COINS_PER_DRAW = 100
+        const val COINS_PER_10_DRAW = 1000
+        const val CONTRIBUTION_PER_CHECK_IN = 10
+        const val CONTRIBUTION_PER_MESSAGES = 10
+        const val MESSAGES_PER_CONTRIBUTION = 5
+        const val MAX_DAILY_MESSAGE_REWARDS = 5
+        const val COINS_PER_CHECK_IN = 10
+        const val COINS_PER_MESSAGE_REWARD = 5
+        const val FIELD_PENALTY_ON_INACTIVE = 30
+        const val INACTIVE_GRACE_DAYS = 3
+    }
+
+    data class DailyStats(
+        val checkedInToday: Boolean,
+        val messageCount: Int,
+        val rewardsClaimed: Int,
+        val maxRewards: Int,
+        val messagesToNextReward: Int,
+        val contributionGained: Int,
+        val coinsGained: Int,
+        val totalContribution: Long,
+        val totalCoins: Int,
+        val inactiveDays: Long,
+        val penaltyRisk: Boolean,
+    )
+
+    suspend fun getDailyStats(groupId: String, userId: Long): DailyStats {
+        val user = store.getUser(groupId, userId) ?: return DailyStats(
+            checkedInToday = false, messageCount = 0, rewardsClaimed = 0,
+            maxRewards = MAX_DAILY_MESSAGE_REWARDS, messagesToNextReward = MESSAGES_PER_CONTRIBUTION,
+            contributionGained = 0, coinsGained = 0, totalContribution = 0, totalCoins = 0,
+            inactiveDays = 0, penaltyRisk = false
+        )
+        val today = LocalDate.now().format(dateFormatter)
+        val checkedInToday = user.lastCheckInDate == today
+        val rewardCount = user.todayMessageCount / MESSAGES_PER_CONTRIBUTION
+        val cappedRewards = minOf(rewardCount, MAX_DAILY_MESSAGE_REWARDS)
+        val remaining = if (cappedRewards >= MAX_DAILY_MESSAGE_REWARDS) 0
+        else MESSAGES_PER_CONTRIBUTION - (user.todayMessageCount % MESSAGES_PER_CONTRIBUTION)
+
+        val contributionGained = (if (checkedInToday) CONTRIBUTION_PER_CHECK_IN else 0) +
+                cappedRewards * CONTRIBUTION_PER_MESSAGES
+        val coinsGained = (if (checkedInToday) COINS_PER_CHECK_IN else 0) +
+                cappedRewards * COINS_PER_MESSAGE_REWARD
+
+        val lastActive = user.lastCheckInDate
+        val inactiveDays = if (lastActive != null) {
+            LocalDate.now().toEpochDay() - LocalDate.parse(lastActive, dateFormatter).toEpochDay()
+        } else 0
+
+        return DailyStats(
+            checkedInToday = checkedInToday,
+            messageCount = user.todayMessageCount,
+            rewardsClaimed = cappedRewards,
+            maxRewards = MAX_DAILY_MESSAGE_REWARDS,
+            messagesToNextReward = remaining,
+            contributionGained = contributionGained,
+            coinsGained = coinsGained,
+            totalContribution = user.contributionCount(),
+            totalCoins = user.coins,
+            inactiveDays = inactiveDays,
+            penaltyRisk = inactiveDays >= INACTIVE_GRACE_DAYS,
+        )
     }
 
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
@@ -66,20 +122,42 @@ class AnimalService(private val store: AnimalStore) {
         if (user.lastCheckInDate != today) {
             user.lastCheckInDate = today
             user.todayMessageCount = 1
+            user.coins += COINS_PER_CHECK_IN
             user.updateContribution(CONTRIBUTION_PER_CHECK_IN)
-            return "打卡成功！+${CONTRIBUTION_PER_CHECK_IN}贡献度"
+            store.saveUser(groupId, user)
+            return "打卡成功！+${CONTRIBUTION_PER_CHECK_IN}贡献度 +${COINS_PER_CHECK_IN}金币"
         }
 
-        // 每10条消息加贡献度
-        if (user.todayMessageCount > 0 && user.todayMessageCount % MESSAGES_PER_CONTRIBUTION == 0) {
-            user.updateContribution(CONTRIBUTION_PER_10_MESSAGES)
-            return "发言奖励！+${CONTRIBUTION_PER_10_MESSAGES}贡献度"
+        // 发言奖励：每 MESSAGES_PER_CONTRIBUTION 条触发，每日上限 MAX_DAILY_MESSAGE_REWARDS 次
+        val rewardCount = user.todayMessageCount / MESSAGES_PER_CONTRIBUTION
+        if (user.todayMessageCount > 0 &&
+            user.todayMessageCount % MESSAGES_PER_CONTRIBUTION == 0 &&
+            rewardCount <= MAX_DAILY_MESSAGE_REWARDS
+        ) {
+            user.coins += COINS_PER_MESSAGE_REWARD
+            user.updateContribution(CONTRIBUTION_PER_MESSAGES)
+            store.saveUser(groupId, user)
+            return "发言奖励！+${CONTRIBUTION_PER_MESSAGES}贡献度 +${COINS_PER_MESSAGE_REWARD}金币"
         }
 
+        // 非奖励消息也要持久化 todayMessageCount
+        store.saveUser(groupId, user)
         return ""
     }
 
-    suspend fun drawPet(groupId: String, userId: Long, count: Int): Result<String> {
+    data class DrawResult(
+        val message: String,
+        val pets: List<Persona>,
+        val cost: Int,
+    )
+
+    data class SellResult(
+        val price: Int,
+        val petName: String,
+        val message: String,
+    )
+
+    suspend fun drawPet(groupId: String, userId: Long, count: Int): Result<DrawResult> {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
         val drawCount = if (count == 10) 10 else 1
@@ -101,10 +179,16 @@ class AnimalService(private val store: AnimalStore) {
         store.saveUser(groupId, user)
 
         val petInfo = drawnPets.joinToString(", ") { "${it.getType()} (Lv.${it.level()})" }
-        return Result.success("抽宠成功！花费 $cost 金币，获得：$petInfo")
+        return Result.success(
+            DrawResult(
+                message = "抽宠成功！花费 $cost 金币，获得：$petInfo",
+                pets = drawnPets,
+                cost = cost,
+            )
+        )
     }
 
-    suspend fun sellPet(groupId: String, userId: Long, petId: Long): Result<String> {
+    suspend fun sellPet(groupId: String, userId: Long, petId: Long): Result<SellResult> {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
         if (user.personas.size <= 1) {
@@ -115,16 +199,22 @@ class AnimalService(private val store: AnimalStore) {
             ?: return Result.failure(Exception("找不到宠物 $petId"))
 
         val price = calculatePetPrice(pet)
+        val petName = pet.getType().name
         user.coins += price
         user.deletePersona(petId)
 
         store.saveUser(groupId, user)
-        return Result.success("售卖成功！获得 $price 金币")
+        return Result.success(SellResult(price, petName, "售卖成功！获得 $price 金币"))
     }
 
     fun calculatePetPrice(pet: Persona): Int {
-        val rarityWeight = (pet.getType().weight * 100).toInt()
-        return (rarityWeight * 10 + pet.level() * 5).toInt()
+        val weight = pet.getType().weight
+        val basePrice = if (weight <= 0.0) {
+            100  // 进化变体：无法抽取，需升至100级进化获得
+        } else {
+            maxOf(((1.0 / weight) * 0.5).toInt(), 5)
+        }
+        return basePrice + pet.level().toInt() * 5
     }
 
     suspend fun getCoins(groupId: String, userId: Long): Int {
@@ -158,22 +248,21 @@ class AnimalService(private val store: AnimalStore) {
 
     suspend fun resetDailyTasks() {
         val groupIds = store.getAllGroupIds()
-        val today = LocalDate.now().format(dateFormatter)
 
         for (groupId in groupIds) {
             val userIds = store.getAllUserIds(groupId)
             for (userId in userIds) {
                 val user = store.getUser(groupId, userId) ?: continue
 
-                // 如果昨天没发言（lastCheckInDate 不是昨天），惩罚
-                val yesterday = LocalDate.now().minusDays(1).format(dateFormatter)
-                if (user.lastCheckInDate != today && user.lastCheckInDate != yesterday) {
-                    // 随机一半的宠物各扣除50贡献度
-                    val petsToPenalize = user.personas.shuffled().take(max(1, user.personas.size / 2))
-                    for (pet in petsToPenalize) {
+                // 超过宽限天数未发言，固定扣除贡献度
+                val lastActive = user.lastCheckInDate
+                if (lastActive != null) {
+                    val lastDate = LocalDate.parse(lastActive, dateFormatter)
+                    val daysInactive = LocalDate.now().toEpochDay() - lastDate.toEpochDay()
+                    if (daysInactive > INACTIVE_GRACE_DAYS) {
                         user.deductContribution(FIELD_PENALTY_ON_INACTIVE)
+                        log.info { "User $userId in group $groupId penalized for inactivity ($daysInactive days)" }
                     }
-                    log.info { "User $userId in group $groupId penalized for inactivity" }
                 }
 
                 // 重置今日消息计数

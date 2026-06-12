@@ -1,10 +1,18 @@
 package uesugi.plugin.animal.store
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.contextual
 import uesugi.plugin.animal.domain.User
 import uesugi.spi.Kv
+import java.time.Instant
 
 class AnimalStore(private val kv: Kv) {
 
@@ -13,6 +21,9 @@ class AnimalStore(private val kv: Kv) {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
+        serializersModule = SerializersModule {
+            contextual(InstantSerializer)
+        }
     }
 
     companion object {
@@ -106,4 +117,10 @@ class AnimalStore(private val kv: Kv) {
             kv.delete(userIdsKey(groupId))
         }
     }
+}
+
+object InstantSerializer : KSerializer<Instant> {
+    override val descriptor = PrimitiveSerialDescriptor("Instant", PrimitiveKind.LONG)
+    override fun serialize(encoder: Encoder, value: Instant) = encoder.encodeLong(value.toEpochMilli())
+    override fun deserialize(decoder: Decoder): Instant = Instant.ofEpochMilli(decoder.decodeLong())
 }
