@@ -306,7 +306,7 @@ class User(
         personas.add(getPersona(personaType))
     }
 
-    private fun getRandomPersona() = getPersona(PersonaType.random())
+    private fun getRandomPersona() = getPersona(PersonaType.randomForContribution())
 
     private fun getPersona(personaType: PersonaType): Persona {
         return Persona(
@@ -510,7 +510,7 @@ class User(
                     max((totalContributionCount / FOR_INIT_PERSONA_COUNT), 1)
                 ).toInt()
             ) {
-                personas.add(Persona(nextId++, PersonaType.random(), Level(0), true))
+                personas.add(Persona(nextId++, PersonaType.randomForContribution(), Level(0), true))
             }
             return personas
         }

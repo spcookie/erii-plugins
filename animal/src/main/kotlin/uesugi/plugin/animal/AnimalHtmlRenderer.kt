@@ -6,6 +6,7 @@ import io.ktor.server.application.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import uesugi.plugin.animal.core.Mode
+import uesugi.plugin.animal.domain.User
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.PluginContext
@@ -104,6 +105,16 @@ class AnimalHtmlRenderer(
     private fun ApplicationCall.param(name: String): String = parameters[name] ?: ""
     private fun ApplicationCall.longParam(name: String): Long? = parameters[name]?.toLongOrNull()
 
+    private fun userHeaderHtml(user: User, userId: Long, showId: Boolean = false): String {
+        val idHtml = if (showId) """<span class="user-id">ID: $userId</span>""" else ""
+        return """
+            <div class="user-header">
+                <span class="user-name">${user.getName()}</span>
+                $idHtml
+            </div>
+        """.trimIndent()
+    }
+
     private fun renderHtml(svgContent: String): String {
         return """
             <!DOCTYPE html>
@@ -115,7 +126,7 @@ class AnimalHtmlRenderer(
             $svgContent
             </body>
             </html>
-            """.trimIndent()
+        """.trimIndent()
     }
 
     // === Swiss-style base layout ===
@@ -182,6 +193,9 @@ class AnimalHtmlRenderer(
                 }
                 .card-body { line-height: 0; }
                 .card-body svg { display: block; max-width: 100%; height: auto; }
+                .user-header { display: flex; align-items: baseline; gap: 12px; padding: 0 24px 16px; }
+                .user-header .user-name { font-size: 13px; font-weight: 600; color: #111; }
+                .user-header .user-id { font-size: 10px; color: #999; font-family: "SF Mono","Menlo","Monaco","Consolas",monospace; }
                 $style
             </style>
             </head>
@@ -214,6 +228,8 @@ class AnimalHtmlRenderer(
             """<div class="tag">可进化</div>"""
         } else ""
 
+        val userHeader = userHeaderHtml(user, userId)
+
         return swissBase(
             style = """
                 .card-head { padding: 28px 24px 24px; }
@@ -241,6 +257,8 @@ class AnimalHtmlRenderer(
                     $evolveHtml
                 </div>
                 <div class="rule"></div>
+                $userHeader
+                <div class="rule-light"></div>
                 <div class="card-body">
                     $svg
                 </div>
@@ -328,6 +346,7 @@ class AnimalHtmlRenderer(
                     </div>
                 </div>
                 <div class="rule"></div>
+                ${userHeaderHtml(user, userId, showId = false)}
                 <div class="pet-table">
                     <div class="pet-header">
                         <span class="pet-id">ID</span>
@@ -368,6 +387,7 @@ class AnimalHtmlRenderer(
         val rules = listOf(
             "每天首次发言打卡 +10贡献 +10金币",
             "每 5 条消息 +10贡献 +5金币（日上限 5 次）",
+            "每累计 30 贡献度获得 1 只随机宠物",
             "每 100 贡献随机升级 1 只宠物",
             "宠物 100 级可进化，等级重置",
             "同类型超过 3 只自动合并：80% 等级转化（最少 3 级）",
@@ -426,6 +446,7 @@ class AnimalHtmlRenderer(
     // === Status card ===
 
     suspend fun getStatusCardHtml(groupId: String, userId: Long): String {
+        val user = store.getUser(groupId, userId)
         val stats = service.getDailyStats(groupId, userId)
 
         val checkInStatus = if (stats.checkedInToday) "已打卡" else "未打卡"
@@ -468,6 +489,7 @@ class AnimalHtmlRenderer(
                     </div>
                 </div>
                 <div class="rule"></div>
+                ${user?.let { userHeaderHtml(it, userId) } ?: ""}
                 <div class="stats-grid">
                     <div class="stat-item">
                         <div class="stat-num">${stats.messageCount}</div>
@@ -514,12 +536,19 @@ class AnimalHtmlRenderer(
 
         return swissBase(
             style = """
-                .card-body { padding: 36px 24px; text-align: center; }
+                .card-head { padding: 28px 24px 0; }
+                .head-label { font-size: 10px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 4px; }
+                .card-body { padding: 24px 24px 36px; text-align: center; }
                 .coin-amt { font-size: 56px; font-weight: 700; color: #111; line-height: 1; letter-spacing: -1px; }
                 .coin-label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1.2px; margin-top: 8px; }
             """.trimIndent()
         ) {
             """
+                <div class="card-head">
+                    <div class="head-label">COINS</div>
+                </div>
+                <div class="rule"></div>
+                ${userHeaderHtml(user, userId, showId = false)}
                 <div class="card-body">
                     <div class="coin-amt">${user.coins}</div>
                     <div class="coin-label">金币</div>
@@ -583,7 +612,9 @@ class AnimalHtmlRenderer(
 
         return swissBase(
             style = """
-                .card-body { padding: 36px 24px 32px; text-align: center; }
+                .card-head { padding: 28px 24px 0; }
+                .head-label { font-size: 10px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 4px; }
+                .card-body { padding: 24px 24px 32px; text-align: center; }
                 .sell-label { font-size: 10px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 1.2px; }
                 .sell-amt { font-size: 48px; font-weight: 700; color: #111; line-height: 1.2; letter-spacing: -1px; }
                 .sell-amt::before { content: '+'; }
@@ -592,6 +623,11 @@ class AnimalHtmlRenderer(
             """.trimIndent()
         ) {
             """
+                <div class="card-head">
+                    <div class="head-label">SELL</div>
+                </div>
+                <div class="rule"></div>
+                ${userHeaderHtml(user, userId, showId = false)}
                 <div class="card-body">
                     <div class="sell-label">SOLD</div>
                     <div class="sell-amt">$price</div>
