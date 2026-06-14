@@ -19,14 +19,14 @@ class AnimalCommandHandler(
 
     private val log = KotlinLogging.logger {}
 
-    fun handle(meta: Meta): AnimalContext {
+    fun handle(meta: Meta): AnimalContext? {
         val ctx = AnimalContextFactory.createFromMeta(
             meta = meta,
             store = store,
             service = service,
             serverUrl = serverUrl,
             isAdmin = meta.isAdmin()
-        )
+        ) ?: return null
 
         return ctx.copy(
             sendMessage = { msg ->
@@ -39,7 +39,7 @@ class AnimalCommandHandler(
 
     fun handleWithError(meta: Meta, parser: (AnimalContext) -> Unit) {
         try {
-            val ctx = handle(meta)
+            val ctx = handle(meta) ?: return
             parser(ctx)
         } catch (e: Exception) {
             log.error(e) { "Error handling command" }

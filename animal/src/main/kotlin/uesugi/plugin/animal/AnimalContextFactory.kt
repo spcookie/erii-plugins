@@ -17,9 +17,10 @@ object AnimalContextFactory {
         service: AnimalService,
         serverUrl: String,
         isAdmin: Boolean,
-    ): AnimalContext {
-        val userId = meta.senderId?.toLongOrNull() ?: 0L
-        val senderNick = meta.senderId ?: "User"
+    ): AnimalContext? {
+        val senderId = meta.senderId ?: return null
+        val userId = senderId.toLongOrNull() ?: return null
+        val senderNick = senderId
 
         return AnimalContext(
             store = store,

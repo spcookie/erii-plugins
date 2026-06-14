@@ -18,7 +18,7 @@ class AnimalToolSet(
 
     private val log = KotlinLogging.logger {}
 
-    private fun createAnimalContext(): AnimalContext {
+    private fun createAnimalContext(): AnimalContext? {
         return AnimalContextFactory.createFromMeta(
             meta = MetaToolSet.meta,
             store = store,
@@ -31,6 +31,9 @@ class AnimalToolSet(
     private fun runCommand(argv: List<String>): String? {
         return try {
             val ctx = createAnimalContext()
+            if (ctx == null) {
+                return "无法识别当前操作的用户，请直接 @机器人 使用 /animal 命令"
+            }
             val parser = AnimalArgParser()
             parser.init(MetaToolSet.meta, ctx)
             parser.main(argv)

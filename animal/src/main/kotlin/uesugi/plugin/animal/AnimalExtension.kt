@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.*
 import org.pf4j.Extension
 import uesugi.common.BotManage
+import uesugi.common.toolkit.ConfigHolder
 import uesugi.onebot.sdk.client.event.onGroupMessage
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.service.DailyTaskService
@@ -12,6 +13,7 @@ import uesugi.spi.CmdExtension
 import uesugi.spi.PassiveExtension
 import uesugi.spi.PluginContext
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 @Extension
@@ -29,6 +31,9 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
     private lateinit var serverUrl: String
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val registeredBots = ConcurrentHashMap.newKeySet<String>()
+
+    // groupId -> set of processed messageIds，按群隔离去重
+    private val processedMessages = ConcurrentHashMap<Long, MutableSet<Int>>()
 
     override fun onLoad(context: PluginContext) {
         this.context = context
@@ -49,15 +54,28 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
         context.scheduler.scheduleRecurrently("register-message-reward-listeners", 30.seconds) {
             registerMessageRewardListeners()
         }
+        // 定期清理已处理的 messageId，防止内存泄漏
+        context.scheduler.scheduleRecurrently("cleanup-processed-messages", 3.minutes) {
+            processedMessages.clear()
+        }
 
         log.info { "AnimalExtension loaded" }
     }
 
     private fun registerMessageRewardListeners() {
         BotManage.getAllBots().forEach { bot ->
+            // 检查该 bot 是否启用了 animal 插件
+            val configKey = runCatching { BotManage.getConfigKey(bot.selfId) }.getOrNull() ?: return@forEach
+            if (!ConfigHolder.isPluginEnabled(configKey, "animal")) return@forEach
+
             if (registeredBots.add(bot.selfId)) {
                 bot.refBot.onGroupMessage { event ->
                     if (!scope.isActive) return@onGroupMessage
+                    // 同一群多个 bot 会收到同一条消息，按 groupId+messageId 去重
+                    val groupMessages = processedMessages.computeIfAbsent(event.groupId) {
+                        ConcurrentHashMap.newKeySet()
+                    }
+                    if (!groupMessages.add(event.messageId)) return@onGroupMessage
                     val groupId = event.groupId.toString()
                     val senderId = event.userId
                     runCatching {
@@ -100,6 +118,8 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
     override fun onUnload() {
         dailyTaskService.stopDailyTasks()
         context.scheduler.cancel("register-message-reward-listeners")
+        context.scheduler.cancel("cleanup-processed-messages")
+        processedMessages.clear()
         scope.cancel()
         log.info { "AnimalExtension unloaded" }
     }
