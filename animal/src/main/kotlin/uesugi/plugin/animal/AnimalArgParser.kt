@@ -67,7 +67,9 @@ class AnimalArgParser : ArgParserHolder<AnimalContext>() {
             Field(),
             Reset(),
             Help(),
-            Status()
+            Status(),
+            AddCoins(),
+            DeductCoins()
         )
     }
 
@@ -90,7 +92,9 @@ class ListPets : CliktCommand("list") {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
             ctx.ensureRegistered()
-            ctx.sendCard("/card/list/${ctx.groupId}/${ctx.senderId}", 600, 650)
+            val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
+            val height = 400 + pets.size * 55
+            ctx.sendCard("/card/list/${ctx.groupId}/${ctx.senderId}", 600, height)
         }
     }
 }
@@ -264,6 +268,70 @@ class Reset : CliktCommand("reset") {
             }
             ctx.service.clearStorage()
             ctx.sendMessage(buildMessage { text("已清理所有 animal 数据") })
+        }
+    }
+}
+
+class AddCoins : CliktCommand("add-coins") {
+    private val amountArg: String by argument()
+    private val userIdArg: String? by argument().optional()
+
+    override fun run() {
+        val ctx = currentContext.findObject<AnimalContext>() ?: return
+        runBlocking {
+            if (!ctx.isAdmin) {
+                ctx.sendMessage(buildMessage { text("权限不足，仅管理员可执行 add-coins") })
+                return@runBlocking
+            }
+            val amount = amountArg.toIntOrNull()
+            if (amount == null) {
+                ctx.sendMessage(buildMessage { text("请输入有效的金币数量") })
+                return@runBlocking
+            }
+            val targetUserId = userIdArg
+            val result = if (targetUserId != null) {
+                val userId = targetUserId.toLongOrNull()
+                if (userId == null) {
+                    ctx.sendMessage(buildMessage { text("请输入有效的用户 ID") })
+                    return@runBlocking
+                }
+                ctx.service.addCoins(ctx.groupId, userId, amount)
+            } else {
+                ctx.service.addCoinsToAll(ctx.groupId, amount)
+            }
+            ctx.sendMessage(buildMessage { text(result.getOrElse { "操作失败：${it.message}" }) })
+        }
+    }
+}
+
+class DeductCoins : CliktCommand("deduct-coins") {
+    private val amountArg: String by argument()
+    private val userIdArg: String? by argument().optional()
+
+    override fun run() {
+        val ctx = currentContext.findObject<AnimalContext>() ?: return
+        runBlocking {
+            if (!ctx.isAdmin) {
+                ctx.sendMessage(buildMessage { text("权限不足，仅管理员可执行 deduct-coins") })
+                return@runBlocking
+            }
+            val amount = amountArg.toIntOrNull()
+            if (amount == null) {
+                ctx.sendMessage(buildMessage { text("请输入有效的金币数量") })
+                return@runBlocking
+            }
+            val targetUserId = userIdArg
+            val result = if (targetUserId != null) {
+                val userId = targetUserId.toLongOrNull()
+                if (userId == null) {
+                    ctx.sendMessage(buildMessage { text("请输入有效的用户 ID") })
+                    return@runBlocking
+                }
+                ctx.service.deductCoins(ctx.groupId, userId, amount)
+            } else {
+                ctx.service.deductCoinsFromAll(ctx.groupId, amount)
+            }
+            ctx.sendMessage(buildMessage { text(result.getOrElse { "操作失败：${it.message}" }) })
         }
     }
 }

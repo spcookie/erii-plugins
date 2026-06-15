@@ -5,6 +5,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import uesugi.plugin.animal.core.FieldType
 import uesugi.plugin.animal.core.Mode
+import uesugi.plugin.animal.core.PersonaGrade
 import uesugi.plugin.animal.core.PersonaType
 import uesugi.plugin.animal.domain.Persona
 import uesugi.plugin.animal.domain.User
@@ -33,7 +34,6 @@ class AnimalService(private val store: AnimalStore) {
         const val MAX_DAILY_MESSAGE_REWARDS = 5
         const val COINS_PER_CHECK_IN = 10
         const val COINS_PER_MESSAGE_REWARD = 5
-        const val FIELD_PENALTY_ON_INACTIVE = 30
         const val INACTIVE_GRACE_DAYS = 3
     }
 
@@ -215,8 +215,9 @@ class AnimalService(private val store: AnimalStore) {
 
     fun calculatePetPrice(pet: Persona): Int {
         val weight = pet.getType().weight
-        val basePrice = if (weight <= 0.0) {
-            100  // 进化变体：无法抽取，需升至100级进化获得
+        val basePrice = if (pet.getType().grade == PersonaGrade.EVOLUTION) {
+            // 进化变体：无法抽取，需升至100级进化获得，保底价值反映进化投入
+            1000
         } else {
             maxOf(((1.0 / weight) * 0.5).toInt(), 5)
         }
@@ -228,6 +229,44 @@ class AnimalService(private val store: AnimalStore) {
         return user.coins
     }
 
+    suspend fun addCoins(groupId: String, userId: Long, amount: Int): Result<String> = withGroupLock(groupId) {
+        val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
+        user.coins += amount
+        store.saveUser(groupId, user)
+        Result.success("已为 $userId 添加 $amount 金币，当前 ${user.coins} 金币")
+    }
+
+    suspend fun deductCoins(groupId: String, userId: Long, amount: Int): Result<String> = withGroupLock(groupId) {
+        val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
+        user.coins -= amount
+        store.saveUser(groupId, user)
+        Result.success("已扣除 $userId $amount 金币，当前 ${user.coins} 金币")
+    }
+
+    suspend fun addCoinsToAll(groupId: String, amount: Int): Result<String> = withGroupLock(groupId) {
+        val userIds = store.getAllUserIds(groupId)
+        var count = 0
+        for (userId in userIds) {
+            val user = store.getUser(groupId, userId) ?: continue
+            user.coins += amount
+            store.saveUser(groupId, user)
+            count++
+        }
+        Result.success("已为 $count 位用户各添加 $amount 金币")
+    }
+
+    suspend fun deductCoinsFromAll(groupId: String, amount: Int): Result<String> = withGroupLock(groupId) {
+        val userIds = store.getAllUserIds(groupId)
+        var count = 0
+        for (userId in userIds) {
+            val user = store.getUser(groupId, userId) ?: continue
+            user.coins -= amount
+            store.saveUser(groupId, user)
+            count++
+        }
+        Result.success("已扣除 $count 位用户各 $amount 金币")
+    }
+
     suspend fun setFarmPet(groupId: String, userId: Long, petId: Long, visible: Boolean): Result<String> =
         withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
@@ -235,7 +274,7 @@ class AnimalService(private val store: AnimalStore) {
         return try {
             user.changePersonaVisible(petId, visible, VisibleChangeType.DEFAULT)
             store.saveUser(groupId, user)
-            Result.success("设置成功！宠物 ${if (visible) "已显示" else "已隐藏"}在农场中")
+            Result.success("设置成功！宠物　＃${petId} ${if (visible) "已显示" else "已隐藏"}在农场中")
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -266,14 +305,14 @@ class AnimalService(private val store: AnimalStore) {
                 for (userId in userIds) {
                     val user = store.getUser(groupId, userId) ?: continue
 
-                    // 超过宽限天数未发言，固定扣除贡献度
+                    // 超过宽限天数未发言，随机扣减一只宠物1级
                     val lastActive = user.lastCheckInDate
                     if (lastActive != null) {
                         val lastDate = LocalDate.parse(lastActive, dateFormatter)
                         val daysInactive = LocalDate.now().toEpochDay() - lastDate.toEpochDay()
                         if (daysInactive > INACTIVE_GRACE_DAYS) {
-                            user.deductContribution(FIELD_PENALTY_ON_INACTIVE)
-                            log.info { "User $userId in group $groupId penalized for inactivity ($daysInactive days)" }
+                            user.deductRandomPersonaLevel()
+                            log.info { "User $userId in group $groupId penalized for inactivity ($daysInactive days), pet level deducted" }
                         }
                     }
 

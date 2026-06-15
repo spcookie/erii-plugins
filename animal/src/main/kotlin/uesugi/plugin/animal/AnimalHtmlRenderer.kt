@@ -116,17 +116,31 @@ class AnimalHtmlRenderer(
     }
 
     private fun renderHtml(svgContent: String): String {
+        val svg = normalizeSvg(svgContent)
         return """
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>
+                    body { margin: 0; }
+                    .svg-stage { width: 100%; max-width: 600px; aspect-ratio: 2 / 1; overflow: visible; line-height: 0; }
+                    .svg-stage svg { display: block; width: 100%; height: 100%; }
+                </style>
             </head>
-            <body style="margin:0">
-            $svgContent
+            <body>
+            <div class="svg-stage">$svg</div>
             </body>
             </html>
         """.trimIndent()
+    }
+
+    private fun normalizeSvg(svg: String): String {
+        if (Regex("""^\s*<svg\b[^>]*\bwidth=""").containsMatchIn(svg)) return svg
+        val match = Regex("""^\s*<svg\b([^>]*)>""").find(svg) ?: return svg
+        val attrs = match.groupValues[1]
+        return svg.replaceRange(match.range, "<svg$attrs width=\"600\" height=\"300\" viewBox=\"0 0 600 300\">")
     }
 
     // === Swiss-style base layout ===
@@ -193,6 +207,8 @@ class AnimalHtmlRenderer(
                 }
                 .card-body { line-height: 0; }
                 .card-body svg { display: block; max-width: 100%; height: auto; }
+                .svg-stage { width: 100%; aspect-ratio: 2 / 1; overflow: visible; line-height: 0; }
+                .svg-stage svg { display: block; width: 100%; height: 100%; max-width: none; }
                 .user-header { display: flex; align-items: baseline; gap: 12px; padding: 0 24px 16px; }
                 .user-header .user-name { font-size: 13px; font-weight: 600; color: #111; }
                 .user-header .user-id { font-size: 10px; color: #999; font-family: "SF Mono","Menlo","Monaco","Consolas",monospace; }
@@ -222,7 +238,7 @@ class AnimalHtmlRenderer(
         val canEvolve = pet.getType().personaEvolution.weight > 0
         val price = service.calculatePetPrice(pet)
 
-        val svg = user.createLineAnimation(petIdResolved, Mode.LINE)
+        val svg = normalizeSvg(user.createLineAnimation(petIdResolved, Mode.LINE))
 
         val evolveHtml = if (canEvolve) {
             """<div class="tag">可进化</div>"""
@@ -260,7 +276,7 @@ class AnimalHtmlRenderer(
                 $userHeader
                 <div class="rule-light"></div>
                 <div class="card-body">
-                    $svg
+                    <div class="svg-stage">$svg</div>
                 </div>
             """.trimIndent()
         }
@@ -292,7 +308,7 @@ class AnimalHtmlRenderer(
     suspend fun getListCardHtml(groupId: String, userId: Long): String? {
         val user = store.getUser(groupId, userId) ?: return null
         val pets = user.personas
-        val svg = user.createListAnimation(Mode.NONE)
+        val svg = normalizeSvg(user.createListAnimation(Mode.NONE))
 
         val petRows = pets.joinToString("\n") { pet ->
             val price = service.calculatePetPrice(pet)
@@ -358,7 +374,7 @@ class AnimalHtmlRenderer(
                 </div>
                 <div class="rule-light"></div>
                 <div class="card-body">
-                    $svg
+                    <div class="svg-stage">$svg</div>
                 </div>
             """.trimIndent()
         }
@@ -388,11 +404,12 @@ class AnimalHtmlRenderer(
             "每天首次发言打卡 +10贡献 +10金币",
             "每 5 条消息 +10贡献 +5金币（日上限 5 次）",
             "每累计 30 贡献度获得 1 只随机宠物",
-            "每 100 贡献随机升级 1 只宠物",
+            "每 20 贡献度升级 1 只展示中的宠物（优先等级最低）",
+            "隐藏的宠物不参与升级，农场至少展示 1 只宠物",
             "宠物 100 级可进化，等级重置",
             "同类型超过 3 只自动合并：80% 等级转化（最少 3 级）",
             "首次 1000 贡献解锁新背景，之后每 6000 贡献解锁一个",
-            "超过 3 天未发言，每日 -30 贡献",
+            "超过 3 天未发言，每日随机扣减 1 只宠物 1 级",
         )
 
         val commandsHtml = commands.joinToString("\n") { (cmd, desc) ->
@@ -453,7 +470,7 @@ class AnimalHtmlRenderer(
         val checkInColor = if (stats.checkedInToday) "#111" else "#999"
 
         val penaltyHtml = if (stats.penaltyRisk) {
-            """<div class="warn-row"><span class="warn-dot"></span>已 ${stats.inactiveDays} 天未发言，每日 -${AnimalService.FIELD_PENALTY_ON_INACTIVE} 贡献</div>"""
+            """<div class="warn-row"><span class="warn-dot"></span>已 ${stats.inactiveDays} 天未发言，每日随机扣减一只宠物 1 级</div>"""
         } else ""
 
         return swissBase(
@@ -564,10 +581,10 @@ class AnimalHtmlRenderer(
         val pets = petIds.mapNotNull { id -> user.personas.find { it.id == id } }
 
         val petsHtml = pets.joinToString("\n") { pet ->
-            val svg = user.createLineAnimation(pet.id, Mode.LINE)
+            val svg = normalizeSvg(user.createLineAnimation(pet.id, Mode.LINE))
             """
                 <div class="draw-pet">
-                    <div class="draw-pet-svg">$svg</div>
+                    <div class="draw-pet-svg"><div class="svg-stage">$svg</div></div>
                     <div class="draw-pet-name">${pet.getType().name} <span class="draw-pet-lv">Lv.${pet.level()}</span></div>
                 </div>
             """.trimIndent()
@@ -583,7 +600,6 @@ class AnimalHtmlRenderer(
                 .draw-list { padding: 16px 24px 8px; }
                 .draw-pet { margin-bottom: 12px; }
                 .draw-pet-svg { line-height: 0; }
-                .draw-pet-svg svg { display: block; max-width: 100%; height: auto; }
                 .draw-pet-name { font-size: 12px; font-weight: 500; color: #111; padding: 6px 0 0; }
                 .draw-pet-lv { color: #999; }
                 .card-foot { padding: 12px 24px 24px; font-size: 12px; color: #777; }
@@ -709,7 +725,7 @@ class AnimalHtmlRenderer(
 
     suspend fun getListHtml(groupId: String, userId: Long): String? {
         val user = store.getUser(groupId, userId) ?: return null
-        val svg = user.createListAnimation(Mode.NONE)
+        val svg = normalizeSvg(user.createListAnimation(Mode.NONE))
         return renderHtml(svg)
     }
 }
