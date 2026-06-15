@@ -26,6 +26,12 @@ class AnimalGifGeneratorTest {
         val output = File.createTempFile("test-farm", ".gif")
         output.deleteOnExit()
 
+        val chromePath = when {
+            System.getProperty("os.name").contains("Windows", ignoreCase = true) ->
+                "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+            else -> System.getenv("CHROME_PATH")
+        }
+
         val config = GifConfig(
             fps = 10,
             gifDurationSeconds = 1,
@@ -33,7 +39,8 @@ class AnimalGifGeneratorTest {
             viewportWidth = 600,
             viewportHeight = 300,
             outputPath = output.absolutePath,
-            keepTempFrames = false
+            keepTempFrames = false,
+            browserExecutablePath = chromePath
         )
 
         AnimalGifGenerator(config).generate(html, output)

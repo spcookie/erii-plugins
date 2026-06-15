@@ -12,7 +12,8 @@ dependencies {
 tasks.register<JavaExec>("runGifDemo") {
     group = "application"
     description = "Run the animal farm GIF demo"
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass = "uesugi.plugin.animal.gif.AnimalGifDemo"
+    classpath = sourceSets["main"].runtimeClasspath + sourceSets["main"].compileClasspath
+    mainClass.set("uesugi.plugin.animal.gif.AnimalGifDemoKt")
+    environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "true")
 }
 

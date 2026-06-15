@@ -9,4 +9,5 @@ data class GifConfig(
     val maxColors: Int = 128,
     val outputPath: String = "animal-farm.gif",
     val keepTempFrames: Boolean = false,
+    val browserExecutablePath: String? = null,
 )

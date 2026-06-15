@@ -28,13 +28,20 @@ fun main() {
         </html>
     """.trimIndent()
 
+    val chromePath = when {
+        System.getProperty("os.name").contains("Windows", ignoreCase = true) ->
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        else -> System.getenv("CHROME_PATH")
+    }
+
     val config = GifConfig(
         fps = 30,
         gifDurationSeconds = 10,
         animationSampleSeconds = 60,
         viewportWidth = 600,
         viewportHeight = 300,
-        outputPath = "animal-farm.gif"
+        outputPath = "animal-farm.gif",
+        browserExecutablePath = chromePath
     )
     val output = File(config.outputPath)
 

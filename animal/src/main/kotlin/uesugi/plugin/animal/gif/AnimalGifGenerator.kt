@@ -16,8 +16,11 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
     private val log = KotlinLogging.logger {}
 
     fun generate(html: String, output: File) {
-        require(output.parentFile.exists() || output.parentFile.mkdirs()) {
-            "Cannot create output directory: ${output.parentFile}"
+        val parent = output.parentFile
+        if (parent != null) {
+            require(parent.exists() || parent.mkdirs()) {
+                "Cannot create output directory: $parent"
+            }
         }
 
         val tempDir = Files.createTempDirectory("animal-gif-frames")
@@ -25,9 +28,12 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
 
         try {
             Playwright.create().use { playwright ->
-                playwright.chromium().launch(
-                    BrowserType.LaunchOptions().setHeadless(true)
-                ).use { browser ->
+                val launchOptions = BrowserType.LaunchOptions()
+                    .setHeadless(true)
+                config.browserExecutablePath?.let {
+                    launchOptions.setExecutablePath(java.nio.file.Paths.get(it))
+                }
+                playwright.chromium().launch(launchOptions).use { browser ->
                     generateFrames(browser, html, tempDir)
                     encodeGif(tempDir, output)
                 }
