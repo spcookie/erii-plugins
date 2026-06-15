@@ -47,6 +47,7 @@ object AnimalContextFactory {
                         quality = 100,
                         type = BrowserScraper.ScreenshotType.PNG,
                         scaleFactor = 2.0,
+                        fitContent = true,
                     )
                 }.getOrNull()
             }

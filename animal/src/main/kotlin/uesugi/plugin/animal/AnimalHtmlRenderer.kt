@@ -125,8 +125,8 @@ class AnimalHtmlRenderer(
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
                     body { margin: 0; }
-                    .svg-stage { width: 100%; max-width: 600px; aspect-ratio: 2 / 1; overflow: visible; line-height: 0; }
-                    .svg-stage svg { display: block; width: 100%; height: 100%; }
+                    .svg-stage { width: 100%; max-width: 600px; overflow: visible; line-height: 0; }
+                    .svg-stage > svg { display: block; width: 100%; height: auto; }
                 </style>
             </head>
             <body>
@@ -207,8 +207,8 @@ class AnimalHtmlRenderer(
                 }
                 .card-body { line-height: 0; }
                 .card-body svg { display: block; max-width: 100%; height: auto; }
-                .svg-stage { width: 100%; aspect-ratio: 2 / 1; overflow: visible; line-height: 0; }
-                .svg-stage svg { display: block; width: 100%; height: 100%; max-width: none; }
+                .svg-stage { width: 100%; overflow: visible; line-height: 0; }
+                .svg-stage > svg { display: block; width: 100%; height: auto; }
                 .user-header { display: flex; align-items: baseline; gap: 12px; padding: 0 24px 16px; }
                 .user-header .user-name { font-size: 13px; font-weight: 600; color: #111; }
                 .user-header .user-id { font-size: 10px; color: #999; font-family: "SF Mono","Menlo","Monaco","Consolas",monospace; }
@@ -288,7 +288,7 @@ class AnimalHtmlRenderer(
         val user = store.getUser(groupId, userId) ?: return null
         val petsInfo = user.personas.joinToString(", ") { "#${it.id}:${it.getType().name}(v=${it.visible})" }
         log.info { "[farm] group=$groupId user=$userId personas=${user.personas.size} [$petsInfo]" }
-        val svg = user.createFarmAnimation()
+        val svg = normalizeSvg(user.createFarmAnimation())
 
         return swissBase(
             style = """
@@ -297,7 +297,7 @@ class AnimalHtmlRenderer(
         ) {
             """
                 <div class="card-body">
-                    $svg
+                    <div class="svg-stage">$svg</div>
                 </div>
             """.trimIndent()
         }
@@ -308,7 +308,7 @@ class AnimalHtmlRenderer(
     suspend fun getListCardHtml(groupId: String, userId: Long): String? {
         val user = store.getUser(groupId, userId) ?: return null
         val pets = user.personas
-        val svg = normalizeSvg(user.createListAnimation(Mode.NONE))
+        val svg = normalizeSvg(user.createListAnimation(Mode.NAME_WITH_LEVEL))
 
         val petRows = pets.joinToString("\n") { pet ->
             val price = service.calculatePetPrice(pet)
@@ -581,7 +581,7 @@ class AnimalHtmlRenderer(
         val pets = petIds.mapNotNull { id -> user.personas.find { it.id == id } }
 
         val petsHtml = pets.joinToString("\n") { pet ->
-            val svg = normalizeSvg(user.createLineAnimation(pet.id, Mode.LINE))
+            val svg = normalizeSvg(user.createLineAnimation(pet.id, Mode.NONE))
             """
                 <div class="draw-pet">
                     <div class="draw-pet-svg"><div class="svg-stage">$svg</div></div>

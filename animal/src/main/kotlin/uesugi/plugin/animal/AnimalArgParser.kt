@@ -39,7 +39,7 @@ private suspend fun AnimalContext.runRegisterCommand() {
     val user = service.registerUser(groupId, senderId, senderNick)
     val pet = user.personas.firstOrNull()
     pet?.let {
-        sendCard("/card/pet/${groupId}/${senderId}/${it.id}?type=register", 400, 430)
+        sendCard("/card/pet/${groupId}/${senderId}/${it.id}?type=register", 360, 400)
     } ?: sendMessage(buildMessage { text("注册失败，请稍后重试") })
 }
 
@@ -93,8 +93,8 @@ class ListPets : CliktCommand("list") {
         runBlocking {
             ctx.ensureRegistered()
             val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
-            val height = 400 + pets.size * 55
-            ctx.sendCard("/card/list/${ctx.groupId}/${ctx.senderId}", 600, height)
+            val height = 350 + pets.size * 50
+            ctx.sendCard("/card/list/${ctx.groupId}/${ctx.senderId}", 500, height)
         }
     }
 }
@@ -104,7 +104,7 @@ class Farm : CliktCommand("farm") {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
             ctx.ensureRegistered()
-            ctx.sendCard("/card/farm/${ctx.groupId}/${ctx.senderId}", 600, 370)
+            ctx.sendCard("/card/farm/${ctx.groupId}/${ctx.senderId}", 600, 400)
         }
     }
 }
@@ -114,7 +114,7 @@ class Coins : CliktCommand("coins") {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
             ctx.ensureRegistered()
-            ctx.sendCard("/card/coins/${ctx.groupId}/${ctx.senderId}", 400, 210)
+            ctx.sendCard("/card/coins/${ctx.groupId}/${ctx.senderId}", 260, 190)
         }
     }
 }
@@ -139,7 +139,7 @@ class Line : CliktCommand("line") {
                 return@runBlocking
             }
 
-            ctx.sendCard("/card/pet/${ctx.groupId}/${ctx.senderId}/${pet.id}", 400, 430)
+            ctx.sendCard("/card/pet/${ctx.groupId}/${ctx.senderId}/${pet.id}", 360, 400)
         }
     }
 }
@@ -351,7 +351,7 @@ class Status : CliktCommand("status") {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
             ctx.ensureRegistered()
-            ctx.sendCard("/card/status/${ctx.groupId}/${ctx.senderId}", 500, 460)
+            ctx.sendCard("/card/status/${ctx.groupId}/${ctx.senderId}", 360, 430)
         }
     }
 }
