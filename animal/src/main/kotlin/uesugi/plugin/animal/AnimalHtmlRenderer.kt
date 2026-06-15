@@ -308,7 +308,7 @@ class AnimalHtmlRenderer(
     suspend fun getListCardHtml(groupId: String, userId: Long): String? {
         val user = store.getUser(groupId, userId) ?: return null
         val pets = user.personas
-        val svg = normalizeSvg(user.createListAnimation(Mode.NAME_WITH_LEVEL))
+        val svg = normalizeSvg(user.createListAnimation(Mode.NONE))
 
         val petRows = pets.joinToString("\n") { pet ->
             val price = service.calculatePetPrice(pet)
