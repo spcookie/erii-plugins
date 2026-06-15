@@ -17,3 +17,8 @@ tasks.register<JavaExec>("runGifDemo") {
     environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "true")
 }
 
+tasks.test {
+    classpath += sourceSets["main"].compileClasspath
+    environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "true")
+}
+
