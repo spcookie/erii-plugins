@@ -1,6 +1,7 @@
 package uesugi.plugin.animal.gif
 
 import com.microsoft.playwright.options.LoadState
+import com.microsoft.playwright.options.ScreenshotType
 import com.microsoft.playwright.Browser
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Page
@@ -15,18 +16,11 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
 
     private val log = KotlinLogging.logger {}
 
-    fun generate(html: String, output: File) {
-        val parent = output.parentFile
-        if (parent != null) {
-            require(parent.exists() || parent.mkdirs()) {
-                "Cannot create output directory: $parent"
-            }
-        }
+    fun generate(html: String): ByteArray {
+        val tempDir = Files.createTempDirectory("animal-gif-")
+        log.info { "Generating GIF, temp dir: $tempDir" }
 
-        val tempDir = Files.createTempDirectory("animal-gif-frames")
-        log.info { "Generating GIF, temp frames: $tempDir" }
-
-        try {
+        return try {
             Playwright.create().use { playwright ->
                 val launchOptions = BrowserType.LaunchOptions()
                     .setHeadless(true)
@@ -34,28 +28,26 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
                     launchOptions.setExecutablePath(java.nio.file.Paths.get(it))
                 }
                 playwright.chromium().launch(launchOptions).use { browser ->
-                    generateFrames(browser, html, tempDir)
-                    encodeGif(tempDir, output)
+                    val frames = captureFrames(browser, html, tempDir)
+                    encodeGif(frames)
                 }
             }
         } finally {
             if (!config.keepTempFrames) {
                 tempDir.toFile().deleteRecursively()
             } else {
-                log.info { "Kept temp frames: $tempDir" }
+                log.info { "Kept temp dir: $tempDir" }
             }
         }
-
-        log.info { "GIF generated: ${output.absolutePath} (${output.length()} bytes)" }
     }
 
-    private fun generateFrames(browser: Browser, html: String, tempDir: Path) {
+    private fun captureFrames(browser: Browser, html: String, tempDir: Path): List<ByteArray> {
         val context = browser.newContext(
             Browser.NewContextOptions()
                 .setViewportSize(config.viewportWidth, config.viewportHeight)
         )
 
-        context.use {
+        return context.use {
             val page = context.newPage()
             val htmlFile = tempDir.resolve("input.html").toFile()
             htmlFile.writeText(html, Charsets.UTF_8)
@@ -68,6 +60,7 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
             val totalFrames = config.fps * config.gifDurationSeconds
             val sampleDurationMs = config.animationSampleSeconds * 1000
             val stepMs = sampleDurationMs / totalFrames
+            val frames = mutableListOf<ByteArray>()
 
             for (i in 0 until totalFrames) {
                 val timeMs = i * stepMs
@@ -75,38 +68,50 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
                     "time => { document.getAnimations().forEach(a => a.currentTime = time); }",
                     timeMs
                 )
-                val framePath = tempDir.resolve(String.format("frame_%04d.png", i))
-                page.screenshot(
-                    Page.ScreenshotOptions()
-                        .setPath(framePath)
-                        .setFullPage(false)
-                )
+                val screenshotOptions = Page.ScreenshotOptions()
+                    .setType(config.screenshotType)
+                    .setFullPage(false)
+                if (config.screenshotType == ScreenshotType.JPEG) {
+                    screenshotOptions.setQuality(config.screenshotQuality)
+                }
+                frames.add(page.screenshot(screenshotOptions))
                 if (i % 30 == 0) {
                     log.info { "Rendered frame $i / $totalFrames" }
                 }
             }
+
+            frames
         }
     }
 
-    private fun encodeGif(framesDir: Path, output: File) {
-        val framePattern = framesDir.resolve("frame_%04d.png").toString()
+    private fun encodeGif(frames: List<ByteArray>): ByteArray {
         val filter = "fps=${config.fps},scale=${config.viewportWidth}:-1:flags=lanczos," +
                 "split[s0][s1];[s0]palettegen=max_colors=${config.maxColors}[p];" +
                 "[s1][p]paletteuse=dither=bayer"
 
         val command = listOf(
             "ffmpeg", "-y",
+            "-f", "image2pipe",
             "-framerate", config.fps.toString(),
-            "-i", framePattern,
+            "-i", "-",
             "-vf", filter,
-            output.absolutePath
+            "-f", "gif",
+            "pipe:1"
         )
 
         log.info { "Running FFmpeg: ${command.joinToString(" ")}" }
 
         val process = ProcessBuilder(command)
-            .redirectErrorStream(true)
+            .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start()
+
+        process.outputStream.use { stdin ->
+            frames.forEach { frame ->
+                stdin.write(frame)
+            }
+        }
+
+        val outputBytes = process.inputStream.use { it.readBytes() }
 
         val finished = process.waitFor(120, TimeUnit.SECONDS)
         if (!finished) {
@@ -115,8 +120,9 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
         }
 
         if (process.exitValue() != 0) {
-            val error = process.inputStream.bufferedReader().readText()
-            throw RuntimeException("FFmpeg failed with exit code ${process.exitValue()}: $error")
+            throw RuntimeException("FFmpeg failed with exit code ${process.exitValue()}")
         }
+
+        return outputBytes
     }
 }

@@ -43,9 +43,11 @@ class AnimalGifGeneratorTest {
             browserExecutablePath = chromePath
         )
 
-        AnimalGifGenerator(config).generate(html, output)
+        val bytes = AnimalGifGenerator(config).generate(html)
+        output.writeBytes(bytes)
 
         assertTrue(output.exists(), "GIF file should exist")
-        assertTrue(output.length() > 0, "GIF file should not be empty")
+        assertTrue(bytes.isNotEmpty(), "GIF bytes should not be empty")
+        assertTrue(bytes.size > 0, "GIF bytes should not be empty")
     }
 }

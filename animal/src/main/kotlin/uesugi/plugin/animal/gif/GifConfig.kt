@@ -1,7 +1,9 @@
 package uesugi.plugin.animal.gif
 
+import com.microsoft.playwright.options.ScreenshotType
+
 data class GifConfig(
-    val fps: Int = 30,
+    val fps: Int = 15,
     val gifDurationSeconds: Int = 10,
     val animationSampleSeconds: Int = 60,
     val viewportWidth: Int = 600,
@@ -10,4 +12,6 @@ data class GifConfig(
     val outputPath: String = "animal-farm.gif",
     val keepTempFrames: Boolean = false,
     val browserExecutablePath: String? = null,
+    val screenshotType: ScreenshotType = ScreenshotType.JPEG,
+    val screenshotQuality: Int = 90,
 )

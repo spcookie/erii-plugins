@@ -35,7 +35,7 @@ fun main() {
     }
 
     val config = GifConfig(
-        fps = 30,
+        fps = 15,
         gifDurationSeconds = 10,
         animationSampleSeconds = 60,
         viewportWidth = 600,
@@ -45,6 +45,7 @@ fun main() {
     )
     val output = File(config.outputPath)
 
-    AnimalGifGenerator(config).generate(html, output)
-    println("GIF generated: ${output.absolutePath}")
+    val bytes = AnimalGifGenerator(config).generate(html)
+    output.writeBytes(bytes)
+    println("GIF generated: ${output.absolutePath} (${bytes.size} bytes)")
 }
