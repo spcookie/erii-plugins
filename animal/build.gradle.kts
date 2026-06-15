@@ -6,6 +6,7 @@ version = "1.0.0"
 
 dependencies {
     compileOnly("com.microsoft.playwright:playwright:1.57.0")
+    implementation("com.madgag:animated-gif-lib:1.4")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.20")
 }
 

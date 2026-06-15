@@ -85,6 +85,33 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
     }
 
     private fun encodeGif(frames: List<ByteArray>): ByteArray {
+        return when (config.encoder) {
+            GifEncoder.FFMPEG -> encodeGifWithFfmpeg(frames)
+            GifEncoder.JVM -> encodeGifWithJvm(frames)
+        }
+    }
+
+    private fun encodeGifWithJvm(frames: List<ByteArray>): ByteArray {
+        log.info { "Encoding GIF with JVM encoder" }
+
+        val encoder = com.madgag.gif.fmsware.AnimatedGifEncoder()
+        val output = java.io.ByteArrayOutputStream()
+        encoder.start(output)
+        encoder.setRepeat(0)
+        encoder.setDelay(1000 / config.fps)
+        encoder.setSize(config.viewportWidth, config.viewportHeight)
+
+        frames.forEachIndexed { index, frame ->
+            val image = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(frame))
+                ?: throw RuntimeException("Failed to decode frame $index")
+            encoder.addFrame(image)
+        }
+
+        encoder.finish()
+        return output.toByteArray()
+    }
+
+    private fun encodeGifWithFfmpeg(frames: List<ByteArray>): ByteArray {
         val filter = "fps=${config.fps},scale=${config.viewportWidth}:-1:flags=lanczos," +
                 "split[s0][s1];[s0]palettegen=max_colors=${config.maxColors}[p];" +
                 "[s1][p]paletteuse=dither=bayer"
