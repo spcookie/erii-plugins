@@ -161,13 +161,14 @@ class AnimalService(private val store: AnimalStore) {
         val price: Int,
         val petName: String,
         val message: String,
+        val petCount: Int = 1,
     )
 
     suspend fun drawPet(groupId: String, userId: Long, count: Int): Result<DrawResult> = withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
-        val drawCount = if (count == 10) 10 else 1
-        val cost = if (count == 10) COINS_PER_10_DRAW else COINS_PER_DRAW
+        val drawCount = count.coerceIn(1, 100)
+        val cost = drawCount * COINS_PER_DRAW
 
         if (user.coins < cost) {
             return Result.failure(Exception("金币不足！需要 $cost 金币，当前 ${user.coins} 金币"))
@@ -194,23 +195,32 @@ class AnimalService(private val store: AnimalStore) {
         )
     }
 
-    suspend fun sellPet(groupId: String, userId: Long, petId: Long): Result<SellResult> = withGroupLock(groupId) {
+    suspend fun sellPet(groupId: String, userId: Long, petId: Long): Result<SellResult> =
+        sellPets(groupId, userId, listOf(petId))
+
+    suspend fun sellPets(groupId: String, userId: Long, petIds: List<Long>): Result<SellResult> =
+        withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
-        if (user.personas.size <= 1) {
-            return Result.failure(Exception("至少需要保留一只宠物"))
+            if (user.personas.size <= petIds.size) {
+                return Result.failure(Exception("至少需要保留一只宠物（共${user.personas.size}只，不能全卖）"))
+            }
+
+            val toSell = petIds.map { id ->
+                user.personas.find { it.id == id }
+                    ?: return Result.failure(Exception("找不到宠物 $id"))
         }
 
-        val pet = user.personas.find { it.id == petId }
-            ?: return Result.failure(Exception("找不到宠物 $petId"))
+            val totalPrice = toSell.sumOf { calculatePetPrice(it) }
+            val names = toSell.joinToString(", ") { it.getType().name }
 
-        val price = calculatePetPrice(pet)
-        val petName = pet.getType().name
-        user.coins += price
-        user.deletePersona(petId)
+            for (pet in toSell) {
+                user.deletePersona(pet.id)
+            }
+            user.coins += totalPrice
 
         store.saveUser(groupId, user)
-        Result.success(SellResult(price, petName, "售卖成功！获得 $price 金币"))
+            Result.success(SellResult(totalPrice, names, "售卖成功！获得 $totalPrice 金币", petIds.size))
     }
 
     fun calculatePetPrice(pet: Persona): Int {
@@ -268,13 +278,19 @@ class AnimalService(private val store: AnimalStore) {
     }
 
     suspend fun setFarmPet(groupId: String, userId: Long, petId: Long, visible: Boolean): Result<String> =
+        setFarmPets(groupId, userId, listOf(petId), visible)
+
+    suspend fun setFarmPets(groupId: String, userId: Long, petIds: List<Long>, visible: Boolean): Result<String> =
         withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
         return try {
-            user.changePersonaVisible(petId, visible, VisibleChangeType.DEFAULT)
+            for (pid in petIds) {
+                user.changePersonaVisible(pid, visible, VisibleChangeType.DEFAULT)
+            }
             store.saveUser(groupId, user)
-            Result.success("设置成功！宠物　＃${petId} ${if (visible) "已显示" else "已隐藏"}在农场中")
+            val idList = petIds.joinToString(", ") { "#$it" }
+            Result.success("设置成功！宠物 $idList ${if (visible) "已显示" else "已隐藏"}在农场中")
         } catch (e: Exception) {
             Result.failure(e)
         }

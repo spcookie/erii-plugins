@@ -350,6 +350,8 @@ class User(
             .append(field.fillBackground())
 
         personas.asSequence()
+            .filter { it.visible }
+            .take(20)
             .forEach { builder.append(it.toSvg(Mode.FARM)) }
 
         return builder.append(field.loadComponent(name, contributions.totalCount()))

@@ -3,6 +3,7 @@ package uesugi.plugin.animal
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
+import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.arguments.optional
 import kotlinx.coroutines.runBlocking
 import uesugi.onebot.core.model.MessageSegment
@@ -155,7 +156,7 @@ class Draw : CliktCommand("draw") {
             val result = ctx.service.drawPet(ctx.groupId, ctx.senderId, count)
             result.onSuccess { drawResult ->
                 val ids = drawResult.pets.joinToString(",") { it.id.toString() }
-                val height = if (drawResult.pets.size > 1) 600 else 420
+                val height = 420 + maxOf(0, drawResult.pets.size - 1) * 300
                 ctx.sendCard("/card/draw/${ctx.groupId}/${ctx.senderId}?ids=$ids&cost=${drawResult.cost}", 500, height)
             }.onFailure {
                 ctx.sendMessage(buildMessage { text("抽宠失败：${it.message}") })
@@ -165,24 +166,32 @@ class Draw : CliktCommand("draw") {
 }
 
 class Sell : CliktCommand("sell") {
-    private val petIdArg: String? by argument().optional()
+    private val args: List<String> by argument().multiple()
 
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
             ctx.ensureRegistered()
-            val resolvedId = petIdArg?.toLongOrNull() ?: run {
+            val petIds = if (args.isEmpty()) {
                 val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
-                pets.firstOrNull()?.id ?: run {
+                listOf(pets.firstOrNull()?.id ?: run {
                     ctx.sendMessage(buildMessage { text("你还没有宠物") })
                     return@runBlocking
+                })
+            } else {
+                val ids = args.mapNotNull { it.toLongOrNull() }
+                if (ids.isEmpty() || ids.size != args.size) {
+                    ctx.sendMessage(buildMessage { text("请输入有效的宠物ID") })
+                    return@runBlocking
                 }
+                ids
             }
-            val result = ctx.service.sellPet(ctx.groupId, ctx.senderId, resolvedId)
+            val result = ctx.service.sellPets(ctx.groupId, ctx.senderId, petIds)
             result.onSuccess { sellResult ->
+                val label = if (sellResult.petCount > 1) "共${sellResult.petCount}只" else sellResult.petName
                 ctx.sendCard(
-                    "/card/sell/${ctx.groupId}/${ctx.senderId}?price=${sellResult.price}&name=${sellResult.petName}",
-                    400,
+                    "/card/sell/${ctx.groupId}/${ctx.senderId}?price=${sellResult.price}&name=$label",
+                    300,
                     260
                 )
             }.onFailure {
@@ -193,22 +202,35 @@ class Sell : CliktCommand("sell") {
 }
 
 class SetFarm : CliktCommand("setfarm") {
-    private val petIdArg: String? by argument().optional()
-    private val visibleArg: String? by argument().optional()
-    val visible: Boolean get() = visibleArg?.lowercase()?.let { it != "off" && it != "false" && it != "0" } ?: true
+    private val args: List<String> by argument().multiple()
 
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
             ctx.ensureRegistered()
-            val resolvedId = petIdArg?.toLongOrNull() ?: run {
+
+            val (visible, idArgs) = when {
+                args.firstOrNull()?.lowercase() == "off" -> false to args.drop(1)
+                args.firstOrNull()?.lowercase() == "on" -> true to args.drop(1)
+                else -> true to args
+            }
+
+            val ids = if (idArgs.isEmpty()) {
                 val pets = ctx.service.getUserPets(ctx.groupId, ctx.senderId)
-                pets.firstOrNull()?.id ?: run {
+                listOf(pets.firstOrNull()?.id ?: run {
                     ctx.sendMessage(buildMessage { text("你还没有宠物") })
                     return@runBlocking
+                })
+            } else {
+                val parsed = idArgs.mapNotNull { it.toLongOrNull() }
+                if (parsed.isEmpty() || parsed.size != idArgs.size) {
+                    ctx.sendMessage(buildMessage { text("请输入有效的宠物ID") })
+                    return@runBlocking
                 }
+                parsed
             }
-            val result = ctx.service.setFarmPet(ctx.groupId, ctx.senderId, resolvedId, visible)
+
+            val result = ctx.service.setFarmPets(ctx.groupId, ctx.senderId, ids, visible)
             ctx.sendMessage(buildMessage { text(result.getOrElse { "设置失败：${it.message}" }) })
         }
     }
@@ -341,7 +363,7 @@ class Help : CliktCommand("help") {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
         runBlocking {
             ctx.ensureRegistered()
-            ctx.sendCard("/card/help/${ctx.groupId}/${ctx.senderId}", 500, 520)
+            ctx.sendCard("/card/help/${ctx.groupId}/${ctx.senderId}", 260, 480)
         }
     }
 }
