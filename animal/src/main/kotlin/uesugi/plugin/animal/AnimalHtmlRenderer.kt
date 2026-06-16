@@ -314,10 +314,11 @@ class AnimalHtmlRenderer(
             val price = service.calculatePetPrice(pet)
             val canEvolve = pet.getType().personaEvolution.weight > 0
             val evolveMark = if (canEvolve) """<span class="evolve-mark">E</span>""" else ""
+            val visibilityMark = if (!pet.visible) """<span class="hidden-tag">H</span>""" else ""
             """
                 <div class="pet-row">
                     <span class="pet-id">#${pet.id}</span>
-                    <span class="pet-name">${pet.getType().name}$evolveMark</span>
+                    <span class="pet-name">${pet.getType().name}$evolveMark$visibilityMark</span>
                     <span class="pet-lv">Lv.${pet.level()}</span>
                     <span class="pet-price">$price</span>
                 </div>
@@ -340,6 +341,7 @@ class AnimalHtmlRenderer(
                 .pet-price { width: 56px; font-weight: 600; color: #111; text-align: right; }
                 .pet-price::after { content: 'G'; font-size: 10px; color: #999; margin-left: 2px; }
                 .evolve-mark { display: inline-block; font-size: 8px; font-weight: 700; color: #111; background: #f0f0f0; padding: 1px 4px; margin-left: 6px; vertical-align: middle; }
+                .hidden-tag { display: inline-block; font-size: 8px; font-weight: 700; color: #fff; background: #111; padding: 1px 4px; margin-left: 6px; vertical-align: middle; }
                 .card-body { padding: 16px 0 0; }
             """.trimIndent()
         ) {
