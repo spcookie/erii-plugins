@@ -23,7 +23,7 @@ class RollPigCommandHandler(
         isAdmin = meta.isAdmin()
     )
 
-    fun handleWithError(meta: Meta, parser: (RollPigContext) -> Unit) {
+    suspend fun handleWithError(meta: Meta, parser: suspend (RollPigContext) -> Unit) {
         try {
             val ctx = handle(meta)
             parser(ctx)

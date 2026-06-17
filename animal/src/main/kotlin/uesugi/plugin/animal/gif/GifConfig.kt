@@ -4,8 +4,8 @@ import com.microsoft.playwright.options.ScreenshotType
 
 data class GifConfig(
     val fps: Int = 15,
-    val gifDurationSeconds: Int = 10,
-    val animationSampleSeconds: Int = 15,
+    val gifDurationSeconds: Int = 15,
+    val animationSampleSeconds: Int = 20,
     val viewportWidth: Int = 800,
     val viewportHeight: Int = 400,
     val maxColors: Int = 128,

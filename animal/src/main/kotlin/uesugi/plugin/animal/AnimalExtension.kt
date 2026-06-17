@@ -108,10 +108,11 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
             AnimalCommandHandler(
                 store = store,
                 service = service,
-                serverUrl = serverUrl,
-                scope = scope
+                serverUrl = serverUrl
             ).handleWithError(meta) { ctx ->
-                meta.parser(ctx)
+                withContext(Dispatchers.IO) {
+                    meta.parser(ctx)
+                }
             }
         }
     }

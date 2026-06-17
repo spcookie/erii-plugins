@@ -6,7 +6,10 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.arguments.optional
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withTimeout
 import uesugi.onebot.core.model.MessageSegment
 import uesugi.onebot.sdk.message.buildMessage
 import uesugi.plugin.animal.core.FieldType
@@ -16,6 +19,7 @@ import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.ArgParserHolder
 import uesugi.spi.Meta
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.minutes
 
 data class AnimalContext(
     val store: AnimalStore,
@@ -24,16 +28,17 @@ data class AnimalContext(
     val senderId: Long,
     val senderNick: String,
     val isAdmin: Boolean,
-    val sendMessage: (List<MessageSegment>) -> Unit,
+    val sendMessage: suspend (List<MessageSegment>) -> Unit,
     val createImage: (ByteArray) -> String?,
     val serverUrl: String,
     val takeScreenshot: (String, Int, Int) -> ByteArray?,
     val textCollector: MutableList<String>? = null,
     val imageCollector: MutableList<String>? = null,
     val ultrafarmInProgress: MutableSet<String> = ConcurrentHashMap.newKeySet(),
+    val ultrafarmSemaphore: Semaphore = Semaphore(2),
 )
 
-private fun AnimalContext.sendText(text: String) {
+private suspend fun AnimalContext.sendText(text: String) {
     textCollector?.add("[user=$senderId] $text")
     sendMessage(buildMessage {
         text(text)
@@ -48,7 +53,7 @@ private fun AnimalContext.collectImage(text: String) {
     imageCollector?.add("[user=$senderId] $text")
 }
 
-private fun AnimalContext.sendCard(path: String, width: Int, height: Int, params: String = "") {
+private suspend fun AnimalContext.sendCard(path: String, width: Int, height: Int, params: String = "") {
     val paramsPart = if (params.isBlank()) "" else ", params=[$params]"
     imageCollector?.add("[user=$senderId] 生成图片卡片: url=$serverUrl$path, width=$width, height=$height$paramsPart")
     val url = "$serverUrl$path"
@@ -488,18 +493,20 @@ class Ultrafarm : CliktCommand("ultrafarm") {
         val key = "${ctx.groupId}:${ctx.senderId}"
 
         if (!ctx.ultrafarmInProgress.add(key)) {
-            ctx.sendText("ultrafarm 生成中，请稍候…")
             return
         }
 
         runBlocking {
             try {
-                ctx.sendMessage(buildMessage {
-                    at(ctx.senderId)
-                    text(" ultrafarm 生成中…")
-                })
-                ctx.collectText("ultrafarm 生成中…")
+                withTimeout(3.minutes) {
+                    ctx.ultrafarmSemaphore.acquire()
+                }
+            } catch (_: TimeoutCancellationException) {
+                ctx.ultrafarmInProgress.remove(key)
+                return@runBlocking
+            }
 
+            try {
                 ctx.ensureRegistered()
 
                 val bytes = FarmGifRenderer().render(ctx.groupId, ctx.senderId, ctx.serverUrl)
@@ -515,6 +522,7 @@ class Ultrafarm : CliktCommand("ultrafarm") {
                 ctx.sendText("ultrafarm 生成失败")
             } finally {
                 ctx.ultrafarmInProgress.remove(key)
+                ctx.ultrafarmSemaphore.release()
             }
         }
     }

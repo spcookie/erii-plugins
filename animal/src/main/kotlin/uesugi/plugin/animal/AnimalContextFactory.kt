@@ -1,6 +1,6 @@
 package uesugi.plugin.animal
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
 import uesugi.common.toolkit.BrowserScraper
 import uesugi.common.toolkit.BrowserScraperHolder
 import uesugi.onebot.sdk.client.api.sendGroupMsg
@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 object AnimalContextFactory {
 
     val ultrafarmInProgress: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    val ultrafarmSemaphore = Semaphore(2)
 
     fun createFromMeta(
         meta: Meta,
@@ -34,9 +35,7 @@ object AnimalContextFactory {
             senderNick = senderId,
             isAdmin = isAdmin,
             sendMessage = { msg ->
-                runBlocking {
-                    meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), msg)
-                }
+                meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), msg)
             },
             createImage = { bytes ->
                 Base64.getEncoder().encodeToString(bytes)
@@ -58,6 +57,7 @@ object AnimalContextFactory {
             textCollector = textCollector,
             imageCollector = imageCollector,
             ultrafarmInProgress = ultrafarmInProgress,
+            ultrafarmSemaphore = ultrafarmSemaphore,
         )
     }
 }

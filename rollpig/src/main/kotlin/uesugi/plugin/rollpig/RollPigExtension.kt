@@ -66,7 +66,9 @@ class RollPigExtension : CmdExtension<RollPigContext, RollPigArgParser, RollPig>
                 service = service,
                 scope = scope
             ).handleWithError(meta) { ctx ->
-                meta.parser(ctx)
+                withContext(Dispatchers.IO) {
+                    meta.parser(ctx)
+                }
             }
         }
     }
