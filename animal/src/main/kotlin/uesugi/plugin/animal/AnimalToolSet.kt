@@ -67,6 +67,13 @@ class AnimalToolSet(
 
     @ChatMessage
     @Tool
+    @LLMDescription("查看用户的宠物农场 GIF 动图（生成耗时约 20~30s）")
+    fun viewFarmGif(): String? {
+        return runCommand(listOf("ultrafarm"))
+    }
+
+    @ChatMessage
+    @Tool
     @LLMDescription("查看单只宠物的详细信息，需要宠物ID参数")
     fun viewAnimal(petId: Long): String? {
         if (petId <= 0) return "请提供有效的宠物ID（正整数）"
