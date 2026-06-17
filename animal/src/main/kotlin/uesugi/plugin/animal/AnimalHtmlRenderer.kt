@@ -381,6 +381,7 @@ class AnimalHtmlRenderer(
             "field list" to "查看已解锁背景列表",
             "field set <type>" to "切换当前背景",
             "status" to "查看今日发言、贡献、金币追踪",
+            "ultrafarm" to "查看农场 GIF 动图（生成约 20~30s）",
             "help" to "显示此帮助信息",
         )
 
