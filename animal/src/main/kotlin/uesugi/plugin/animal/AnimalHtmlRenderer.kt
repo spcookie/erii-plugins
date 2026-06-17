@@ -116,17 +116,31 @@ class AnimalHtmlRenderer(
     }
 
     private fun renderHtml(svgContent: String): String {
+        val svg = normalizeSvg(svgContent)
         return """
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>
+                    body { margin: 0; }
+                    .svg-stage { width: 100%; max-width: 600px; overflow: visible; line-height: 0; }
+                    .svg-stage > svg { display: block; width: 100%; height: auto; }
+                </style>
             </head>
-            <body style="margin:0">
-            $svgContent
+            <body>
+            <div class="svg-stage">$svg</div>
             </body>
             </html>
         """.trimIndent()
+    }
+
+    private fun normalizeSvg(svg: String): String {
+        if (Regex("""^\s*<svg\b[^>]*\bwidth=""").containsMatchIn(svg)) return svg
+        val match = Regex("""^\s*<svg\b([^>]*)>""").find(svg) ?: return svg
+        val attrs = match.groupValues[1]
+        return svg.replaceRange(match.range, "<svg$attrs width=\"600\" height=\"300\" viewBox=\"0 0 600 300\">")
     }
 
     // === Swiss-style base layout ===
@@ -193,6 +207,8 @@ class AnimalHtmlRenderer(
                 }
                 .card-body { line-height: 0; }
                 .card-body svg { display: block; max-width: 100%; height: auto; }
+                .svg-stage { width: 100%; overflow: visible; line-height: 0; }
+                .svg-stage > svg { display: block; width: 100%; height: auto; }
                 .user-header { display: flex; align-items: baseline; gap: 12px; padding: 0 24px 16px; }
                 .user-header .user-name { font-size: 13px; font-weight: 600; color: #111; }
                 .user-header .user-id { font-size: 10px; color: #999; font-family: "SF Mono","Menlo","Monaco","Consolas",monospace; }
@@ -222,7 +238,7 @@ class AnimalHtmlRenderer(
         val canEvolve = pet.getType().personaEvolution.weight > 0
         val price = service.calculatePetPrice(pet)
 
-        val svg = user.createLineAnimation(petIdResolved, Mode.LINE)
+        val svg = normalizeSvg(user.createLineAnimation(petIdResolved, Mode.LINE))
 
         val evolveHtml = if (canEvolve) {
             """<div class="tag">可进化</div>"""
@@ -260,7 +276,7 @@ class AnimalHtmlRenderer(
                 $userHeader
                 <div class="rule-light"></div>
                 <div class="card-body">
-                    $svg
+                    <div class="svg-stage">$svg</div>
                 </div>
             """.trimIndent()
         }
@@ -272,7 +288,7 @@ class AnimalHtmlRenderer(
         val user = store.getUser(groupId, userId) ?: return null
         val petsInfo = user.personas.joinToString(", ") { "#${it.id}:${it.getType().name}(v=${it.visible})" }
         log.info { "[farm] group=$groupId user=$userId personas=${user.personas.size} [$petsInfo]" }
-        val svg = user.createFarmAnimation()
+        val svg = normalizeSvg(user.createFarmAnimation())
 
         return swissBase(
             style = """
@@ -281,7 +297,7 @@ class AnimalHtmlRenderer(
         ) {
             """
                 <div class="card-body">
-                    $svg
+                    <div class="svg-stage">$svg</div>
                 </div>
             """.trimIndent()
         }
@@ -292,16 +308,17 @@ class AnimalHtmlRenderer(
     suspend fun getListCardHtml(groupId: String, userId: Long): String? {
         val user = store.getUser(groupId, userId) ?: return null
         val pets = user.personas
-        val svg = user.createListAnimation(Mode.NONE)
+        val svg = normalizeSvg(user.createListAnimation(Mode.NONE))
 
         val petRows = pets.joinToString("\n") { pet ->
             val price = service.calculatePetPrice(pet)
             val canEvolve = pet.getType().personaEvolution.weight > 0
             val evolveMark = if (canEvolve) """<span class="evolve-mark">E</span>""" else ""
+            val visibilityMark = if (!pet.visible) """<span class="hidden-tag">H</span>""" else ""
             """
                 <div class="pet-row">
                     <span class="pet-id">#${pet.id}</span>
-                    <span class="pet-name">${pet.getType().name}$evolveMark</span>
+                    <span class="pet-name">${pet.getType().name}$evolveMark$visibilityMark</span>
                     <span class="pet-lv">Lv.${pet.level()}</span>
                     <span class="pet-price">$price</span>
                 </div>
@@ -324,6 +341,7 @@ class AnimalHtmlRenderer(
                 .pet-price { width: 56px; font-weight: 600; color: #111; text-align: right; }
                 .pet-price::after { content: 'G'; font-size: 10px; color: #999; margin-left: 2px; }
                 .evolve-mark { display: inline-block; font-size: 8px; font-weight: 700; color: #111; background: #f0f0f0; padding: 1px 4px; margin-left: 6px; vertical-align: middle; }
+                .hidden-tag { display: inline-block; font-size: 8px; font-weight: 700; color: #fff; background: #111; padding: 1px 4px; margin-left: 6px; vertical-align: middle; }
                 .card-body { padding: 16px 0 0; }
             """.trimIndent()
         ) {
@@ -358,7 +376,7 @@ class AnimalHtmlRenderer(
                 </div>
                 <div class="rule-light"></div>
                 <div class="card-body">
-                    $svg
+                    <div class="svg-stage">$svg</div>
                 </div>
             """.trimIndent()
         }
@@ -372,12 +390,12 @@ class AnimalHtmlRenderer(
         val commands = listOf(
             "register" to "注册用户，获取一只随机宠物",
             "list" to "查看宠物列表和金币余额",
-            "farm" to "查看宠物农场全景",
+            "farm" to "查看宠物农场（最多显示20只）",
             "line [id]" to "查看单只宠物详情（默认第一只）",
-            "draw [n]" to "抽宠物（100/1000 金币）",
-            "sell [id]" to "售卖宠物换取金币",
+            "draw [n]" to "抽宠物（100金币/次，支持任意次数）",
+            "sell [id ...]" to "售卖宠物换取金币（支持批量）",
             "coins" to "查看金币余额",
-            "setfarm [id] [on|off]" to "设置农场展示/隐藏宠物",
+            "setfarm [on|off] [id ...]" to "批量设置农场展示/隐藏宠物",
             "field list" to "查看已解锁背景列表",
             "field set <type>" to "切换当前背景",
             "status" to "查看今日发言、贡献、金币追踪",
@@ -389,11 +407,13 @@ class AnimalHtmlRenderer(
             "每天首次发言打卡 +10贡献 +10金币",
             "每 5 条消息 +10贡献 +5金币（日上限 5 次）",
             "每累计 30 贡献度获得 1 只随机宠物",
-            "每 100 贡献随机升级 1 只宠物",
+            "每 20 贡献度升级 1 只展示中的宠物（优先等级最低）",
+            "隐藏的宠物不参与升级，农场至少展示 1 只宠物",
             "宠物 100 级可进化，等级重置",
             "同类型超过 3 只自动合并：80% 等级转化（最少 3 级）",
             "首次 1000 贡献解锁新背景，之后每 6000 贡献解锁一个",
-            "超过 3 天未发言，每日 -30 贡献",
+            "超过 3 天未发言，每日随机扣减 1 只宠物 1 级",
+            "农场最多展示 20 只宠物，超出部分不显示",
         )
 
         val commandsHtml = commands.joinToString("\n") { (cmd, desc) ->
@@ -454,7 +474,7 @@ class AnimalHtmlRenderer(
         val checkInColor = if (stats.checkedInToday) "#111" else "#999"
 
         val penaltyHtml = if (stats.penaltyRisk) {
-            """<div class="warn-row"><span class="warn-dot"></span>已 ${stats.inactiveDays} 天未发言，每日 -${AnimalService.FIELD_PENALTY_ON_INACTIVE} 贡献</div>"""
+            """<div class="warn-row"><span class="warn-dot"></span>已 ${stats.inactiveDays} 天未发言，每日随机扣减一只宠物 1 级</div>"""
         } else ""
 
         return swissBase(
@@ -565,10 +585,10 @@ class AnimalHtmlRenderer(
         val pets = petIds.mapNotNull { id -> user.personas.find { it.id == id } }
 
         val petsHtml = pets.joinToString("\n") { pet ->
-            val svg = user.createLineAnimation(pet.id, Mode.LINE)
+            val svg = normalizeSvg(user.createLineAnimation(pet.id, Mode.NONE))
             """
                 <div class="draw-pet">
-                    <div class="draw-pet-svg">$svg</div>
+                    <div class="draw-pet-svg"><div class="svg-stage">$svg</div></div>
                     <div class="draw-pet-name">${pet.getType().name} <span class="draw-pet-lv">Lv.${pet.level()}</span></div>
                 </div>
             """.trimIndent()
@@ -584,7 +604,6 @@ class AnimalHtmlRenderer(
                 .draw-list { padding: 16px 24px 8px; }
                 .draw-pet { margin-bottom: 12px; }
                 .draw-pet-svg { line-height: 0; }
-                .draw-pet-svg svg { display: block; max-width: 100%; height: auto; }
                 .draw-pet-name { font-size: 12px; font-weight: 500; color: #111; padding: 6px 0 0; }
                 .draw-pet-lv { color: #999; }
                 .card-foot { padding: 12px 24px 24px; font-size: 12px; color: #777; }
@@ -710,7 +729,7 @@ class AnimalHtmlRenderer(
 
     suspend fun getListHtml(groupId: String, userId: Long): String? {
         val user = store.getUser(groupId, userId) ?: return null
-        val svg = user.createListAnimation(Mode.NONE)
+        val svg = normalizeSvg(user.createListAnimation(Mode.NONE))
         return renderHtml(svg)
     }
 }

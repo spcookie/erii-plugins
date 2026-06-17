@@ -5,6 +5,7 @@ package uesugi.plugin
 import ai.koog.agents.core.tools.reflect.ToolSet
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.executeStructured
+import ai.koog.prompt.params.LLMParams
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -326,7 +327,7 @@ suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
         }
     }.joinToString("\n\n")
 
-    val promt = prompt("seed_dream_prompt") {
+    val promt = prompt("seed_dream_prompt", LLMParams(maxTokens = 65536)) {
         system(IMAGE_TASK_AGGREGATOR_PROMPT)
         user(prompt)
     }

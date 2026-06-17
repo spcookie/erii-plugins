@@ -5,6 +5,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import uesugi.plugin.animal.core.FieldType
 import uesugi.plugin.animal.core.Mode
+import uesugi.plugin.animal.core.PersonaGrade
 import uesugi.plugin.animal.core.PersonaType
 import uesugi.plugin.animal.domain.Persona
 import uesugi.plugin.animal.domain.User
@@ -33,7 +34,6 @@ class AnimalService(private val store: AnimalStore) {
         const val MAX_DAILY_MESSAGE_REWARDS = 5
         const val COINS_PER_CHECK_IN = 10
         const val COINS_PER_MESSAGE_REWARD = 5
-        const val FIELD_PENALTY_ON_INACTIVE = 30
         const val INACTIVE_GRACE_DAYS = 3
     }
 
@@ -161,13 +161,14 @@ class AnimalService(private val store: AnimalStore) {
         val price: Int,
         val petName: String,
         val message: String,
+        val petCount: Int = 1,
     )
 
     suspend fun drawPet(groupId: String, userId: Long, count: Int): Result<DrawResult> = withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
-        val drawCount = if (count == 10) 10 else 1
-        val cost = if (count == 10) COINS_PER_10_DRAW else COINS_PER_DRAW
+        val drawCount = count.coerceIn(1, 100)
+        val cost = drawCount * COINS_PER_DRAW
 
         if (user.coins < cost) {
             return Result.failure(Exception("金币不足！需要 $cost 金币，当前 ${user.coins} 金币"))
@@ -194,29 +195,39 @@ class AnimalService(private val store: AnimalStore) {
         )
     }
 
-    suspend fun sellPet(groupId: String, userId: Long, petId: Long): Result<SellResult> = withGroupLock(groupId) {
+    suspend fun sellPet(groupId: String, userId: Long, petId: Long): Result<SellResult> =
+        sellPets(groupId, userId, listOf(petId))
+
+    suspend fun sellPets(groupId: String, userId: Long, petIds: List<Long>): Result<SellResult> =
+        withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
-        if (user.personas.size <= 1) {
-            return Result.failure(Exception("至少需要保留一只宠物"))
+            if (user.personas.size <= petIds.size) {
+                return Result.failure(Exception("至少需要保留一只宠物（共${user.personas.size}只，不能全卖）"))
+            }
+
+            val toSell = petIds.map { id ->
+                user.personas.find { it.id == id }
+                    ?: return Result.failure(Exception("找不到宠物 $id"))
         }
 
-        val pet = user.personas.find { it.id == petId }
-            ?: return Result.failure(Exception("找不到宠物 $petId"))
+            val totalPrice = toSell.sumOf { calculatePetPrice(it) }
+            val names = toSell.joinToString(", ") { it.getType().name }
 
-        val price = calculatePetPrice(pet)
-        val petName = pet.getType().name
-        user.coins += price
-        user.deletePersona(petId)
+            for (pet in toSell) {
+                user.deletePersona(pet.id)
+            }
+            user.coins += totalPrice
 
         store.saveUser(groupId, user)
-        Result.success(SellResult(price, petName, "售卖成功！获得 $price 金币"))
+            Result.success(SellResult(totalPrice, names, "售卖成功！获得 $totalPrice 金币", petIds.size))
     }
 
     fun calculatePetPrice(pet: Persona): Int {
         val weight = pet.getType().weight
-        val basePrice = if (weight <= 0.0) {
-            100  // 进化变体：无法抽取，需升至100级进化获得
+        val basePrice = if (pet.getType().grade == PersonaGrade.EVOLUTION) {
+            // 进化变体：无法抽取，需升至100级进化获得，保底价值反映进化投入
+            1000
         } else {
             maxOf(((1.0 / weight) * 0.5).toInt(), 5)
         }
@@ -228,14 +239,58 @@ class AnimalService(private val store: AnimalStore) {
         return user.coins
     }
 
+    suspend fun addCoins(groupId: String, userId: Long, amount: Int): Result<String> = withGroupLock(groupId) {
+        val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
+        user.coins += amount
+        store.saveUser(groupId, user)
+        Result.success("已为 $userId 添加 $amount 金币，当前 ${user.coins} 金币")
+    }
+
+    suspend fun deductCoins(groupId: String, userId: Long, amount: Int): Result<String> = withGroupLock(groupId) {
+        val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
+        user.coins -= amount
+        store.saveUser(groupId, user)
+        Result.success("已扣除 $userId $amount 金币，当前 ${user.coins} 金币")
+    }
+
+    suspend fun addCoinsToAll(groupId: String, amount: Int): Result<String> = withGroupLock(groupId) {
+        val userIds = store.getAllUserIds(groupId)
+        var count = 0
+        for (userId in userIds) {
+            val user = store.getUser(groupId, userId) ?: continue
+            user.coins += amount
+            store.saveUser(groupId, user)
+            count++
+        }
+        Result.success("已为 $count 位用户各添加 $amount 金币")
+    }
+
+    suspend fun deductCoinsFromAll(groupId: String, amount: Int): Result<String> = withGroupLock(groupId) {
+        val userIds = store.getAllUserIds(groupId)
+        var count = 0
+        for (userId in userIds) {
+            val user = store.getUser(groupId, userId) ?: continue
+            user.coins -= amount
+            store.saveUser(groupId, user)
+            count++
+        }
+        Result.success("已扣除 $count 位用户各 $amount 金币")
+    }
+
     suspend fun setFarmPet(groupId: String, userId: Long, petId: Long, visible: Boolean): Result<String> =
+        setFarmPets(groupId, userId, listOf(petId), visible)
+
+    suspend fun setFarmPets(groupId: String, userId: Long, petIds: List<Long>, visible: Boolean): Result<String> =
         withGroupLock(groupId) {
         val user = store.getUser(groupId, userId) ?: return Result.failure(Exception("用户不存在"))
 
         return try {
-            user.changePersonaVisible(petId, visible, VisibleChangeType.DEFAULT)
+            for (pid in petIds) {
+                user.changePersonaVisible(pid, visible, VisibleChangeType.DEFAULT)
+            }
             store.saveUser(groupId, user)
-            Result.success("设置成功！宠物 ${if (visible) "已显示" else "已隐藏"}在农场中")
+            val idList = petIds.joinToString(", ") { "#$it" }
+            Result.success("设置成功！宠物 $idList ${if (visible) "已显示" else "已隐藏"}在农场中")
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -266,14 +321,14 @@ class AnimalService(private val store: AnimalStore) {
                 for (userId in userIds) {
                     val user = store.getUser(groupId, userId) ?: continue
 
-                    // 超过宽限天数未发言，固定扣除贡献度
+                    // 超过宽限天数未发言，随机扣减一只宠物1级
                     val lastActive = user.lastCheckInDate
                     if (lastActive != null) {
                         val lastDate = LocalDate.parse(lastActive, dateFormatter)
                         val daysInactive = LocalDate.now().toEpochDay() - lastDate.toEpochDay()
                         if (daysInactive > INACTIVE_GRACE_DAYS) {
-                            user.deductContribution(FIELD_PENALTY_ON_INACTIVE)
-                            log.info { "User $userId in group $groupId penalized for inactivity ($daysInactive days)" }
+                            user.deductRandomPersonaLevel()
+                            log.info { "User $userId in group $groupId penalized for inactivity ($daysInactive days), pet level deducted" }
                         }
                     }
 

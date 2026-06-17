@@ -6,6 +6,7 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.executeStructured
+import ai.koog.prompt.params.LLMParams
 import com.fasterxml.jackson.databind.JsonNode
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.call.*
@@ -173,9 +174,10 @@ suspend fun getImage(meta: Meta): ByteArray? {
         }
     }
 
-    val prompt = prompt("提取标题、关键词") {
-        user(
-            """
+    val prompt = prompt("提取标题、关键词", LLMParams(maxTokens = 65536)) {
+        user {
+            text(
+                """
                 请根据以下规则提取"当前内容"中索要的二次元/动漫图片的关键词或标签(Tag)，仅限二次元、动漫、游戏角色或风格类标签。
 
                 规则：
@@ -187,12 +189,17 @@ suspend fun getImage(meta: Meta): ByteArray? {
                 6. 历史上下文仅作为参考，帮助理解用户意图。
 
                 历史上下文：
+                """.trimIndent()
+            )
+            text(
+                """
                 $ctx
 
                 当前内容：
                 ${meta.input}
                 """.trimIndent()
-        )
+            )
+        }
     }
 
     log.info { "用户输入：${meta.input}，开始提取关键词" }

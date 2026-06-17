@@ -17,17 +17,18 @@ object AnimalContextFactory {
         service: AnimalService,
         serverUrl: String,
         isAdmin: Boolean,
+        textCollector: MutableList<String>? = null,
+        imageCollector: MutableList<String>? = null,
     ): AnimalContext? {
         val senderId = meta.senderId ?: return null
         val userId = senderId.toLongOrNull() ?: return null
-        val senderNick = senderId
 
         return AnimalContext(
             store = store,
             service = service,
             groupId = meta.groupId,
             senderId = userId,
-            senderNick = senderNick,
+            senderNick = senderId,
             isAdmin = isAdmin,
             sendMessage = { msg ->
                 runBlocking {
@@ -47,9 +48,12 @@ object AnimalContextFactory {
                         quality = 100,
                         type = BrowserScraper.ScreenshotType.PNG,
                         scaleFactor = 2.0,
+                        fitContent = true,
                     )
                 }.getOrNull()
-            }
+            },
+            textCollector = textCollector,
+            imageCollector = imageCollector,
         )
     }
 }

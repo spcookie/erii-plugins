@@ -89,14 +89,24 @@ class User(
 
     /**
      * 自动合并：如果同类型宠物超过3只，合并最低等级和最高等级的宠物
+     * 当农场只剩一只可见宠物时，优先删除隐藏的，避免农场变空
      */
     private fun autoMergeIfNeeded(personaType: PersonaType) {
         while (true) {
             val sameTypePersonas = personas.filter { it.getType() == personaType }
             if (sameTypePersonas.size <= MAX_SAME_TYPE_COUNT) break
             val sorted = sameTypePersonas.sortedBy { it.level() }
-            val lowest = sorted.first()
             val highest = sorted.last()
+
+            // 如果唯一可见的宠物在合并组里，优先删除隐藏的，避免农场变空
+            val onlyVisiblePersona = personas.singleOrNull { it.visible }
+            val lowest = if (onlyVisiblePersona != null && onlyVisiblePersona in sameTypePersonas) {
+                sameTypePersonas.filter { !it.visible }.minByOrNull { it.level() }
+            } else {
+                sorted.first()
+            }
+
+            if (lowest == null) break
             if (lowest.id == highest.id) break
             mergePersona(highest.id, lowest.id)
         }
@@ -227,6 +237,13 @@ class User(
             }
 
             VisibleChangeType.DEFAULT -> run {
+                // 禁止隐藏最后一只展示在农场中的宠物
+                if (!visible && persona.visible) {
+                    val visiblePersonas = personas.filter { it.visible }
+                    require(visiblePersonas.size > 1) {
+                        "Cannot hide the last visible pet"
+                    }
+                }
                 persona.visible = visible
             }
         }
@@ -253,7 +270,7 @@ class User(
         currentYearContribution.contribution += contribution
         lastPersonaGivePoint += contribution
         currentYearContribution.lastUpdatedContribution = Instant.now()
-        levelUpPersonas(currentYearContribution.contribution)
+        levelUpPersonas()
 
         // 自动进化检查
         autoEvolveIfNeeded()
@@ -267,28 +284,15 @@ class User(
         return contribution
     }
 
-    fun deductContribution(amount: Int) {
-        val currentYear = ZonedDateTime.now(ZoneId.of("UTC")).year
-        val currentYearContribution =
-            contributions.firstOrNull { it.year == currentYear } ?: return
-
-        currentYearContribution.contribution = maxOf(0, currentYearContribution.contribution - amount)
-        currentYearContribution.lastUpdatedContribution = Instant.now()
-    }
-
-    private fun levelUpPersonas(totalContribution: Int) {
-        val currentLevel = personas.sumOf { it.level.value }.toInt()
-        val targetLevel = totalContribution / CONTRIBUTION_PER_LEVEL
+    private fun levelUpPersonas() {
+        val visiblePersonas = personas.filter { it.visible }
+        val currentLevel = visiblePersonas.sumOf { it.level.value }.toInt()
+        val targetLevel = (contributionCount() / CONTRIBUTION_PER_LEVEL).toInt()
         val levelUps = targetLevel - currentLevel
         if (levelUps <= 0) return
         repeat(levelUps) {
-            runCatching {
-                val persona = personas.random()
-                persona.level.value++
-            }.onFailure {
-                it.printStackTrace()
-                throw it
-            }
+            val persona = visiblePersonas.minByOrNull { it.level.value } ?: return
+            persona.level.value++
         }
     }
 
@@ -346,6 +350,8 @@ class User(
             .append(field.fillBackground())
 
         personas.asSequence()
+            .filter { it.visible }
+            .take(20)
             .forEach { builder.append(it.toSvg(Mode.FARM)) }
 
         return builder.append(field.loadComponent(name, contributions.totalCount()))
@@ -441,13 +447,21 @@ class User(
         return persona.isEvolutionable()
     }
 
+    fun deductRandomPersonaLevel() {
+        if (personas.isEmpty()) return
+        val persona = personas.random()
+        if (persona.level.value > 0) {
+            persona.level.value--
+        }
+    }
+
     companion object {
         private const val MAX_PERSONA_COUNT = 30L
         private const val MAX_INIT_PERSONA_COUNT = 10L
         private const val FOR_NEW_PERSONA_COUNT = 30L
         private const val FOR_INIT_PERSONA_COUNT = 100L
         private const val MAX_SAME_TYPE_COUNT = 3
-        private const val CONTRIBUTION_PER_LEVEL = 100  // 每100贡献度升一级
+        private const val CONTRIBUTION_PER_LEVEL = 20  // 每20贡献度升一级
 
         // 背景解锁条件
         private const val FIRST_FIELD_UNLOCK_CONTRIBUTION = 1000L  // 首次解锁需1000贡献度
