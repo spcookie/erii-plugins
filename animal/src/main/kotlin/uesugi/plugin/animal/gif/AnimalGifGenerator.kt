@@ -33,11 +33,7 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
                 }
             }
         } finally {
-            if (!config.keepTempFrames) {
-                tempDir.toFile().deleteRecursively()
-            } else {
-                log.info { "Kept temp dir: $tempDir" }
-            }
+            tempDir.toFile().deleteRecursively()
         }
     }
 
