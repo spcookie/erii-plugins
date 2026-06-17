@@ -99,6 +99,10 @@ class AnimalHtmlRenderer(
             cardRoute("/card/list/{groupId}/{userId}", "List not found") {
                 getListCardHtml(param("groupId"), longParam("userId") ?: return@cardRoute null)
             }
+
+            cardRoute("/card/gif/{groupId}/{userId}", "GIF not found") {
+                getGifHtml(param("groupId"), longParam("userId") ?: return@cardRoute null)
+            }
         }
     }
 
@@ -731,5 +735,29 @@ class AnimalHtmlRenderer(
         val user = store.getUser(groupId, userId) ?: return null
         val svg = normalizeSvg(user.createListAnimation(Mode.NONE))
         return renderHtml(svg)
+    }
+
+    // === GIF route (on-demand, for ultrafarm) ===
+
+    suspend fun getGifHtml(groupId: String, userId: Long): String? {
+        val user = store.getUser(groupId, userId) ?: return null
+        val svg = user.createFarmAnimation()
+            .replace("width=\"600\"", "width=\"100%\"")
+            .replace("height=\"300\"", "height=\"100%\"")
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #ffffff; }
+                    svg { display: block; }
+                </style>
+            </head>
+            <body>
+            $svg
+            </body>
+            </html>
+        """.trimIndent()
     }
 }

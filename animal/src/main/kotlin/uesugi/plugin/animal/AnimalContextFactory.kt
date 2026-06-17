@@ -8,8 +8,11 @@ import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.Meta
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 object AnimalContextFactory {
+
+    val ultrafarmInProgress: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     fun createFromMeta(
         meta: Meta,
@@ -54,6 +57,7 @@ object AnimalContextFactory {
             },
             textCollector = textCollector,
             imageCollector = imageCollector,
+            ultrafarmInProgress = ultrafarmInProgress,
         )
     }
 }

@@ -6,6 +6,7 @@ import org.pf4j.Extension
 import uesugi.common.BotManage
 import uesugi.common.toolkit.ConfigHolder
 import uesugi.onebot.sdk.client.event.onGroupMessage
+import uesugi.plugin.animal.gif.PlaywrightBrowserPool
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.service.DailyTaskService
 import uesugi.plugin.animal.store.AnimalStore
@@ -121,6 +122,7 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
         context.scheduler.cancel("cleanup-processed-messages")
         processedMessages.clear()
         scope.cancel()
+        PlaywrightBrowserPool.close()
         log.info { "AnimalExtension unloaded" }
     }
 }

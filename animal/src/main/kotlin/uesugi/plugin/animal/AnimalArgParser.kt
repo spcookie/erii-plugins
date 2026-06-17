@@ -5,6 +5,7 @@ import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.arguments.optional
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import uesugi.onebot.core.model.MessageSegment
 import uesugi.onebot.sdk.message.buildMessage
@@ -14,6 +15,7 @@ import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.ArgParserHolder
 import uesugi.spi.Meta
+import java.util.concurrent.ConcurrentHashMap
 
 data class AnimalContext(
     val store: AnimalStore,
@@ -28,6 +30,7 @@ data class AnimalContext(
     val takeScreenshot: (String, Int, Int) -> ByteArray?,
     val textCollector: MutableList<String>? = null,
     val imageCollector: MutableList<String>? = null,
+    val ultrafarmInProgress: MutableSet<String> = ConcurrentHashMap.newKeySet(),
 )
 
 private fun AnimalContext.sendText(text: String) {
@@ -80,10 +83,6 @@ class AnimalArgParser : ArgParserHolder<AnimalContext>() {
 
     private lateinit var context: AnimalContext
 
-    val ultrafarmInProgress = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-
-    fun ultrafarmKey(groupId: String, senderId: Long): String = "$groupId:$senderId"
-
     override fun init(meta: Meta, context: AnimalContext) {
         this.context = context
         subcommands(
@@ -101,10 +100,8 @@ class AnimalArgParser : ArgParserHolder<AnimalContext>() {
             Status(),
             AddCoins(),
             DeductCoins(),
-            Status(),
             Ultrafarm()
         )
-        currentContext.findOrSetObject { this }
     }
 
     override fun run() {
@@ -483,12 +480,14 @@ class Status : CliktCommand("status") {
 }
 
 class Ultrafarm : CliktCommand("ultrafarm") {
+
+    private val log = KotlinLogging.logger {}
+
     override fun run() {
         val ctx = currentContext.findObject<AnimalContext>() ?: return
-        val parser = currentContext.findObject<AnimalArgParser>() ?: return
-        val key = parser.ultrafarmKey(ctx.groupId, ctx.senderId)
+        val key = "${ctx.groupId}:${ctx.senderId}"
 
-        if (!parser.ultrafarmInProgress.add(key)) {
+        if (!ctx.ultrafarmInProgress.add(key)) {
             ctx.sendText("ultrafarm 生成中，请稍候…")
             return
         }
@@ -501,13 +500,9 @@ class Ultrafarm : CliktCommand("ultrafarm") {
                 })
                 ctx.collectText("ultrafarm 生成中…")
 
-                val user = ctx.store.getUser(ctx.groupId, ctx.senderId)
-                if (user == null) {
-                    ctx.sendText("用户未注册，请先 /animal register")
-                    return@runBlocking
-                }
+                ctx.ensureRegistered()
 
-                val bytes = FarmGifRenderer().render(user)
+                val bytes = FarmGifRenderer().render(ctx.groupId, ctx.senderId, ctx.serverUrl)
                 val base64 = ctx.createImage(bytes)
                 if (base64 != null) {
                     ctx.sendMessage(buildMessage { image("base64://$base64") })
@@ -516,9 +511,10 @@ class Ultrafarm : CliktCommand("ultrafarm") {
                     ctx.sendText("ultrafarm 图片上传失败")
                 }
             } catch (e: Exception) {
-                ctx.sendText("ultrafarm 生成失败：${e.message}")
+                log.error(e) { "ultrafarm 生成失败" }
+                ctx.sendText("ultrafarm 生成失败")
             } finally {
-                parser.ultrafarmInProgress.remove(key)
+                ctx.ultrafarmInProgress.remove(key)
             }
         }
     }
