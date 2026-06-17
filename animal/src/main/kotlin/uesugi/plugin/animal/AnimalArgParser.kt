@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import uesugi.onebot.core.model.MessageSegment
 import uesugi.onebot.sdk.message.buildMessage
 import uesugi.plugin.animal.core.FieldType
+import uesugi.plugin.animal.gif.FarmGifRenderer
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.ArgParserHolder
@@ -53,6 +54,10 @@ class AnimalArgParser : ArgParserHolder<AnimalContext>() {
 
     private lateinit var context: AnimalContext
 
+    val ultrafarmInProgress = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun ultrafarmKey(groupId: String, senderId: Long): String = "$groupId:$senderId"
+
     override fun init(meta: Meta, context: AnimalContext) {
         this.context = context
         subcommands(
@@ -67,8 +72,10 @@ class AnimalArgParser : ArgParserHolder<AnimalContext>() {
             Field(),
             Reset(),
             Help(),
-            Status()
+            Status(),
+            Ultrafarm()
         )
+        currentContext.findOrSetObject { this }
     }
 
     override fun run() {
@@ -284,6 +291,46 @@ class Status : CliktCommand("status") {
         runBlocking {
             ctx.ensureRegistered()
             ctx.sendCard("/card/status/${ctx.groupId}/${ctx.senderId}", 500, 460)
+        }
+    }
+}
+
+class Ultrafarm : CliktCommand("ultrafarm") {
+    override fun run() {
+        val ctx = currentContext.findObject<AnimalContext>() ?: return
+        val parser = currentContext.findObject<AnimalArgParser>() ?: return
+        val key = parser.ultrafarmKey(ctx.groupId, ctx.senderId)
+
+        if (!parser.ultrafarmInProgress.add(key)) {
+            ctx.sendMessage(buildMessage { text("ultrafarm 生成中，请稍候…") })
+            return
+        }
+
+        runBlocking {
+            try {
+                ctx.sendMessage(buildMessage {
+                    at(ctx.senderId)
+                    text(" ultrafarm 生成中…")
+                })
+
+                val user = ctx.store.getUser(ctx.groupId, ctx.senderId)
+                if (user == null) {
+                    ctx.sendMessage(buildMessage { text("用户未注册，请先 /animal register") })
+                    return@runBlocking
+                }
+
+                val bytes = FarmGifRenderer().render(user)
+                val base64 = ctx.createImage(bytes)
+                if (base64 != null) {
+                    ctx.sendMessage(buildMessage { image("base64://$base64") })
+                } else {
+                    ctx.sendMessage(buildMessage { text("ultrafarm 图片上传失败") })
+                }
+            } catch (e: Exception) {
+                ctx.sendMessage(buildMessage { text("ultrafarm 生成失败：${e.message}") })
+            } finally {
+                parser.ultrafarmInProgress.remove(key)
+            }
         }
     }
 }
