@@ -41,6 +41,10 @@ private fun AnimalContext.collectText(text: String) {
     textCollector?.add("[user=$senderId] $text")
 }
 
+private fun AnimalContext.collectImage(text: String) {
+    imageCollector?.add("[user=$senderId] $text")
+}
+
 private fun AnimalContext.sendCard(path: String, width: Int, height: Int, params: String = "") {
     val paramsPart = if (params.isBlank()) "" else ", params=[$params]"
     imageCollector?.add("[user=$senderId] 生成图片卡片: url=$serverUrl$path, width=$width, height=$height$paramsPart")
@@ -96,7 +100,7 @@ class AnimalArgParser : ArgParserHolder<AnimalContext>() {
             Help(),
             Status(),
             AddCoins(),
-            DeductCoins()
+            DeductCoins(),
             Status(),
             Ultrafarm()
         )
@@ -485,7 +489,7 @@ class Ultrafarm : CliktCommand("ultrafarm") {
         val key = parser.ultrafarmKey(ctx.groupId, ctx.senderId)
 
         if (!parser.ultrafarmInProgress.add(key)) {
-            ctx.sendMessage(buildMessage { text("ultrafarm 生成中，请稍候…") })
+            ctx.sendText("ultrafarm 生成中，请稍候…")
             return
         }
 
@@ -495,10 +499,11 @@ class Ultrafarm : CliktCommand("ultrafarm") {
                     at(ctx.senderId)
                     text(" ultrafarm 生成中…")
                 })
+                ctx.collectText("ultrafarm 生成中…")
 
                 val user = ctx.store.getUser(ctx.groupId, ctx.senderId)
                 if (user == null) {
-                    ctx.sendMessage(buildMessage { text("用户未注册，请先 /animal register") })
+                    ctx.sendText("用户未注册，请先 /animal register")
                     return@runBlocking
                 }
 
@@ -506,11 +511,12 @@ class Ultrafarm : CliktCommand("ultrafarm") {
                 val base64 = ctx.createImage(bytes)
                 if (base64 != null) {
                     ctx.sendMessage(buildMessage { image("base64://$base64") })
+                    ctx.collectImage("ultrafarm GIF 动图已发送 (${bytes.size} bytes)")
                 } else {
-                    ctx.sendMessage(buildMessage { text("ultrafarm 图片上传失败") })
+                    ctx.sendText("ultrafarm 图片上传失败")
                 }
             } catch (e: Exception) {
-                ctx.sendMessage(buildMessage { text("ultrafarm 生成失败：${e.message}") })
+                ctx.sendText("ultrafarm 生成失败：${e.message}")
             } finally {
                 parser.ultrafarmInProgress.remove(key)
             }
