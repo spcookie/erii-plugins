@@ -38,8 +38,6 @@ class AnimalGifGeneratorTest {
             animationSampleSeconds = 2,
             viewportWidth = 600,
             viewportHeight = 300,
-            outputPath = output.absolutePath,
-            keepTempFrames = false,
             browserExecutablePath = chromePath
         )
 
@@ -48,6 +46,5 @@ class AnimalGifGeneratorTest {
 
         assertTrue(output.exists(), "GIF file should exist")
         assertTrue(bytes.isNotEmpty(), "GIF bytes should not be empty")
-        assertTrue(bytes.size > 0, "GIF bytes should not be empty")
     }
 }
