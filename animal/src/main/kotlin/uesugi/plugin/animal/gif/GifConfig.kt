@@ -20,4 +20,5 @@ data class GifConfig(
     val screenshotType: ScreenshotType = ScreenshotType.JPEG,
     val screenshotQuality: Int = 90,
     val encoder: GifEncoder = GifEncoder.FFMPEG,
+    val ffmpegDockerImage: String = "jrottenberg/ffmpeg:7-alpine",
 )

@@ -92,23 +92,7 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
     }
 
     private fun encodeGifWithJvm(frames: List<ByteArray>): ByteArray {
-        log.info { "Encoding GIF with JVM encoder" }
-
-        val encoder = com.madgag.gif.fmsware.AnimatedGifEncoder()
-        val output = java.io.ByteArrayOutputStream()
-        encoder.start(output)
-        encoder.setRepeat(0)
-        encoder.setDelay(1000 / config.fps)
-        encoder.setSize(config.viewportWidth, config.viewportHeight)
-
-        frames.forEachIndexed { index, frame ->
-            val image = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(frame))
-                ?: throw RuntimeException("Failed to decode frame $index")
-            encoder.addFrame(image)
-        }
-
-        encoder.finish()
-        return output.toByteArray()
+        throw UnsupportedOperationException("JVM encoder requires com.madgag:animated-gif-lib dependency")
     }
 
     private fun encodeGifWithFfmpeg(frames: List<ByteArray>): ByteArray {
@@ -116,8 +100,18 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
                 "split[s0][s1];[s0]palettegen=max_colors=${config.maxColors}[p];" +
                 "[s1][p]paletteuse=dither=bayer"
 
-        val command = listOf(
-            "ffmpeg", "-y",
+        val isWindows = System.getProperty("os.name").contains("Windows", ignoreCase = true)
+        val baseCommand = if (isWindows) {
+            listOf(
+                "docker", "run", "--rm", "-i",
+                config.ffmpegDockerImage
+            )
+        } else {
+            listOf("ffmpeg")
+        }
+
+        val ffmpegArgs = listOf(
+            "-y",
             "-f", "image2pipe",
             "-framerate", config.fps.toString(),
             "-i", "-",
@@ -126,11 +120,12 @@ class AnimalGifGenerator(private val config: GifConfig = GifConfig()) {
             "pipe:1"
         )
 
-        log.info { "Running FFmpeg: ${command.joinToString(" ")}" }
+        val command = baseCommand + ffmpegArgs
+        log.info { "Running: ${command.joinToString(" ")}" }
 
-        val process = ProcessBuilder(command)
+        val processBuilder = ProcessBuilder(command)
             .redirectError(ProcessBuilder.Redirect.INHERIT)
-            .start()
+        val process = processBuilder.start()
 
         process.outputStream.use { stdin ->
             frames.forEach { frame ->
