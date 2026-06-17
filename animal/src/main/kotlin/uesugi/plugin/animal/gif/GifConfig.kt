@@ -2,11 +2,6 @@ package uesugi.plugin.animal.gif
 
 import com.microsoft.playwright.options.ScreenshotType
 
-enum class GifEncoder {
-    FFMPEG,
-    JVM,
-}
-
 data class GifConfig(
     val fps: Int = 15,
     val gifDurationSeconds: Int = 10,
@@ -19,6 +14,5 @@ data class GifConfig(
     val browserExecutablePath: String? = null,
     val screenshotType: ScreenshotType = ScreenshotType.JPEG,
     val screenshotQuality: Int = 90,
-    val encoder: GifEncoder = GifEncoder.FFMPEG,
     val ffmpegDockerImage: String = "jrottenberg/ffmpeg:7-alpine",
 )
