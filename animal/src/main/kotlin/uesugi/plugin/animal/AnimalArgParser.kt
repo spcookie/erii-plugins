@@ -516,10 +516,12 @@ class Ultrafarm : CliktCommand("ultrafarm") {
                     ctx.collectImage("ultrafarm GIF 动图已发送 (${bytes.size} bytes)")
                 } else {
                     ctx.sendText("ultrafarm 图片上传失败")
+                    ctx.collectImage("ultrafarm 图片上传失败")
                 }
             } catch (e: Exception) {
                 log.error(e) { "ultrafarm 生成失败" }
                 ctx.sendText("ultrafarm 生成失败")
+                ctx.collectImage("ultrafarm 生成失败")
             } finally {
                 ctx.ultrafarmInProgress.remove(key)
                 ctx.ultrafarmSemaphore.release()

@@ -1,8 +1,6 @@
 package uesugi.plugin.animal
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import uesugi.onebot.sdk.client.api.sendGroupMsg
-import uesugi.onebot.sdk.message.buildMessage
 import uesugi.plugin.animal.service.AnimalService
 import uesugi.plugin.animal.store.AnimalStore
 import uesugi.spi.Meta
@@ -32,11 +30,6 @@ class AnimalCommandHandler(
             parser(ctx)
         } catch (e: Exception) {
             log.error(e) { "Error handling command" }
-            runCatching {
-                meta.roledBot.refBot.sendGroupMsg(meta.groupId.toLong(), buildMessage {
-                    text("执行失败：${e.message}")
-                })
-            }
         }
     }
 }
