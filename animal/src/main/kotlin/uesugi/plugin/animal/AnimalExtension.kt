@@ -52,6 +52,10 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
         registerCommandHandler()
         registerTools()
         registerMessageRewardListeners()
+
+        // 一次性修复存量数据：合并超过3只的同类型宠物
+        scope.launch { service.repairAllMerges() }
+
         context.scheduler.scheduleRecurrently("register-message-reward-listeners", 30.seconds) {
             registerMessageRewardListeners()
         }

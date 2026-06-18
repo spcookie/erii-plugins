@@ -88,6 +88,13 @@ class User(
     }
 
     /**
+     * 修复存量数据：对已有所有类型执行合并
+     */
+    fun repairAllMerges() {
+        personas.map { it.getType() }.distinct().forEach { autoMergeIfNeeded(it) }
+    }
+
+    /**
      * 自动合并：如果同类型宠物超过3只，合并最低等级和最高等级的宠物
      * 当农场只剩一只可见宠物时，优先删除隐藏的，避免农场变空
      */
@@ -301,25 +308,11 @@ class User(
             return
         }
         lastPersonaGivePoint %= FOR_NEW_PERSONA_COUNT.toInt()
-
-        val newPersona = getRandomPersona()
-        personas.add(newPersona)
+        addPersona(PersonaType.randomForContribution())
     }
 
     fun giveNewPersonaByType(personaType: PersonaType) {
-        personas.add(getPersona(personaType))
-    }
-
-    private fun getRandomPersona() = getPersona(PersonaType.randomForContribution())
-
-    private fun getPersona(personaType: PersonaType): Persona {
-        return Persona(
-            id = nextPersonaId(),
-            type = personaType,
-            level = Level(0),
-            visible = personas.size < MAX_PERSONA_COUNT,
-            user = this,
-        )
+        addPersona(personaType)
     }
 
     private fun nextPersonaId(): Long = (personas.maxOfOrNull { it.id } ?: 0L) + 1

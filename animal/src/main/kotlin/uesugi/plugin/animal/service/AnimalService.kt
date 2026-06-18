@@ -108,6 +108,25 @@ class AnimalService(private val store: AnimalStore) {
         }
     }
 
+    suspend fun repairAllMerges() {
+        val groupIds = store.getAllGroupIds()
+        var repaired = 0
+        for (groupId in groupIds) {
+            val users = store.getAllUsers(groupId)
+            for (user in users) {
+                val before = user.personas.size
+                user.repairAllMerges()
+                val after = user.personas.size
+                if (before != after) {
+                    store.saveUser(groupId, user)
+                    repaired++
+                    log.info { "Repaired user $groupId/${user.getName()}: $before -> $after personas" }
+                }
+            }
+        }
+        log.info { "Merge repair complete: $repaired users fixed" }
+    }
+
     suspend fun getUserPets(groupId: String, userId: Long): List<Persona> {
         val user = store.getUser(groupId, userId) ?: return emptyList()
         return user.personas.toList()
