@@ -6,7 +6,6 @@ import uesugi.plugin.rollpig.store.RollPigStore
 import java.awt.Color
 import java.awt.Font
 import java.awt.FontMetrics
-import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -32,6 +31,16 @@ class RollPigService(
         private const val ANALYSIS_LINE_HEIGHT_FACTOR = 1.6
         private const val NAME_FONT_SIZE = 66
         private val AVATAR_EXTENSIONS = listOf("png", "jpg", "jpeg", "webp", "gif")
+
+        private val CUSTOM_FONT: Font? by lazy {
+            try {
+                val inputStream = RollPigService::class.java.classLoader
+                    .getResourceAsStream("font/JingnanMaiRounded.otf")
+                Font.createFont(Font.TRUETYPE_FONT, inputStream)
+            } catch (_: Exception) {
+                null
+            }
+        }
     }
 
     suspend fun rollPigForUser(userId: String, todayDate: String, forceNew: Boolean = false): PigData {
@@ -64,10 +73,11 @@ class RollPigService(
             g2d.color = Color.WHITE
             g2d.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
 
-            // 预定义字体
-            val nameFont = Font(null, Font.BOLD, NAME_FONT_SIZE)
-            val descFont = Font(null, Font.PLAIN, DESC_FONT_SIZE)
-            val analysisFont = Font(null, Font.PLAIN, ANALYSIS_FONT_SIZE)
+            // 预定义字体（优先使用自定义字体，加载失败则回退系统默认）
+            val baseFont = CUSTOM_FONT ?: Font(null, Font.PLAIN, NAME_FONT_SIZE)
+            val nameFont = baseFont.deriveFont(Font.BOLD, NAME_FONT_SIZE.toFloat())
+            val descFont = baseFont.deriveFont(Font.PLAIN, DESC_FONT_SIZE.toFloat())
+            val analysisFont = baseFont.deriveFont(Font.PLAIN, ANALYSIS_FONT_SIZE.toFloat())
 
             // 获取各字体度量（必须先设置 g2d.font）
             g2d.font = nameFont
@@ -103,7 +113,7 @@ class RollPigService(
                 g2d.color = Color.LIGHT_GRAY
                 g2d.fillRect(avatarX, currentY, AVATAR_SIZE, AVATAR_SIZE)
                 g2d.color = Color.RED
-                g2d.font = Font(null, Font.PLAIN, 24)
+                g2d.font = (CUSTOM_FONT ?: Font(null, Font.PLAIN, 24)).deriveFont(Font.PLAIN, 24f)
                 val errorText = "图片加载失败"
                 val textWidth = g2d.fontMetrics.stringWidth(errorText)
                 g2d.drawString(errorText, centerX - textWidth / 2, currentY + AVATAR_SIZE / 2)
