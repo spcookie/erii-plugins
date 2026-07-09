@@ -1,7 +1,7 @@
 package uesugi.plugin.rollpig
 
 import uesugi.onebot.core.model.MessageSegment
-import uesugi.onebot.sdk.message.buildMessage
+import uesugi.onebot.core.message.buildMessage
 import uesugi.plugin.rollpig.service.RollPigService
 import uesugi.plugin.rollpig.store.RollPigStore
 

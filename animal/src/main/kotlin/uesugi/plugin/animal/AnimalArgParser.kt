@@ -11,7 +11,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeout
 import uesugi.onebot.core.model.MessageSegment
-import uesugi.onebot.sdk.message.buildMessage
+import uesugi.onebot.core.message.buildMessage
 import uesugi.plugin.animal.core.FieldType
 import uesugi.plugin.animal.gif.FarmGifRenderer
 import uesugi.plugin.animal.service.AnimalService

@@ -10,7 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import uesugi.common.ChatMessage
 import uesugi.onebot.sdk.client.api.sendGroupMsg
-import uesugi.onebot.sdk.message.buildMessage
+import uesugi.onebot.core.message.buildMessage
 import uesugi.spi.annotation.*
 import kotlin.time.Duration.Companion.milliseconds
 

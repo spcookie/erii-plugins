@@ -30,7 +30,7 @@ import uesugi.common.data.MessageType
 import uesugi.common.data.ResourceTable
 import uesugi.common.event.PSFeature
 import uesugi.onebot.sdk.client.api.sendGroupMsg
-import uesugi.onebot.sdk.message.buildMessage
+import uesugi.onebot.core.message.buildMessage
 import uesugi.spi.EmptyConfig.plus
 import uesugi.spi.Feature
 import uesugi.spi.Meta

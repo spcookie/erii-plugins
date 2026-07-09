@@ -21,7 +21,7 @@ import uesugi.common.LLMProviderChoice
 import uesugi.common.event.PSFeature
 import uesugi.common.toolkit.calcHumanTypingDelay
 import uesugi.onebot.sdk.client.api.sendGroupMsg
-import uesugi.onebot.sdk.message.buildMessage
+import uesugi.onebot.core.message.buildMessage
 import uesugi.spi.*
 import uesugi.spi.EmptyConfig.plus
 import uesugi.spi.annotation.*

@@ -24,7 +24,7 @@ import uesugi.common.data.HistoryTable
 import uesugi.common.toolkit.BrowserScraper
 import uesugi.common.toolkit.BrowserScraperHolder
 import uesugi.onebot.sdk.client.api.sendGroupMsg
-import uesugi.onebot.sdk.message.buildMessage
+import uesugi.onebot.core.message.buildMessage
 import uesugi.spi.Kv
 import uesugi.spi.Meta
 import uesugi.spi.annotation.*
