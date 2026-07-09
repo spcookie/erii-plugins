@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.*
 import org.pf4j.Extension
 import uesugi.common.BotManage
+import uesugi.common.event.BotConnectedEvent
 import uesugi.common.toolkit.ConfigHolder
 import uesugi.onebot.sdk.client.event.onGroupMessage
 import uesugi.plugin.animal.gif.PlaywrightBrowserPool
@@ -15,7 +16,6 @@ import uesugi.spi.PassiveExtension
 import uesugi.spi.PluginContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 @Extension
 class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, AnimalArgParser, Animal> {
@@ -56,12 +56,15 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
         // 一次性修复存量数据：合并超过3只的同类型宠物
         scope.launch { service.repairAllMerges() }
 
-        context.scheduler.scheduleRecurrently("register-message-reward-listeners", 30.seconds) {
-            registerMessageRewardListeners()
-        }
         // 定期清理已处理的 messageId，防止内存泄漏
         context.scheduler.scheduleRecurrently("cleanup-processed-messages", 3.minutes) {
             processedMessages.clear()
+        }
+
+        context.onEvent { event ->
+            if (event is BotConnectedEvent && ConfigHolder.isPluginEnabled(event.configKey, "animal")) {
+                registerBotListener(event.botId)
+            }
         }
 
         log.info { "AnimalExtension loaded" }
@@ -69,28 +72,29 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
 
     private fun registerMessageRewardListeners() {
         BotManage.getAllBots().forEach { bot ->
-            // 检查该 bot 是否启用了 animal 插件
             val configKey = runCatching { BotManage.getConfigKey(bot.selfId) }.getOrNull() ?: return@forEach
             if (!ConfigHolder.isPluginEnabled(configKey, "animal")) return@forEach
+            registerBotListener(bot.selfId)
+        }
+    }
 
-            if (registeredBots.add(bot.selfId)) {
-                bot.refBot.onGroupMessage { event ->
-                    if (!scope.isActive) return@onGroupMessage
-                    // 同一群多个 bot 会收到同一条消息，按 groupId+messageId 去重
-                    val groupMessages = processedMessages.computeIfAbsent(event.groupId) {
-                        ConcurrentHashMap.newKeySet()
-                    }
-                    if (!groupMessages.add(event.messageId)) return@onGroupMessage
-                    val groupId = event.groupId.toString()
-                    val senderId = event.userId
-                    runCatching {
-                        if (store.getAllGroupIds().contains(groupId)) {
-                            service.onUserMessage(groupId, senderId)
-                        }
-                    }.onFailure { e ->
-                        log.error(e) { "Failed to process message reward for $groupId/$senderId" }
-                    }
+    internal fun registerBotListener(botId: String) {
+        if (!registeredBots.add(botId)) return
+        val bot = BotManage.getBot(botId) ?: return
+        bot.refBot.onGroupMessage { event ->
+            if (!scope.isActive) return@onGroupMessage
+            val groupMessages = processedMessages.computeIfAbsent(event.groupId) {
+                ConcurrentHashMap.newKeySet()
+            }
+            if (!groupMessages.add(event.messageId)) return@onGroupMessage
+            val groupId = event.groupId.toString()
+            val senderId = event.userId
+            runCatching {
+                if (store.getAllGroupIds().contains(groupId)) {
+                    service.onUserMessage(groupId, senderId)
                 }
+            }.onFailure { e ->
+                log.error(e) { "Failed to process message reward for $groupId/$senderId" }
             }
         }
     }
@@ -123,7 +127,6 @@ class AnimalExtension : PassiveExtension<Animal>, CmdExtension<AnimalContext, An
 
     override fun onUnload() {
         dailyTaskService.stopDailyTasks()
-        context.scheduler.cancel("register-message-reward-listeners")
         context.scheduler.cancel("cleanup-processed-messages")
         processedMessages.clear()
         scope.cancel()
