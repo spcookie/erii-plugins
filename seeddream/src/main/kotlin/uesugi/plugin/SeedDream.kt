@@ -24,13 +24,13 @@ import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import uesugi.common.ChatMessage
 import uesugi.common.ChatToolSet
-import uesugi.common.LLMProviderChoice
+import uesugi.common.LLMModelChoice
 import uesugi.common.data.HistoryTable
 import uesugi.common.data.MessageType
 import uesugi.common.data.ResourceTable
 import uesugi.common.event.PSFeature
-import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.onebot.core.message.buildMessage
+import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.spi.EmptyConfig.plus
 import uesugi.spi.Feature
 import uesugi.spi.Meta
@@ -332,7 +332,7 @@ suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
         user(prompt)
     }
 
-    val result = llm.executeStructured<SeedDreamRequest>(promt, LLMProviderChoice.Pro)
+    val result = llm.executeStructured<SeedDreamRequest>(promt, LLMModelChoice.Pro)
 
     val request = result.getOrThrow().data
 

@@ -17,11 +17,11 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import uesugi.common.ChatMessage
 import uesugi.common.ChatToolSet
-import uesugi.common.LLMProviderChoice
+import uesugi.common.LLMModelChoice
 import uesugi.common.event.PSFeature
 import uesugi.common.toolkit.calcHumanTypingDelay
-import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.onebot.core.message.buildMessage
+import uesugi.onebot.sdk.client.api.sendGroupMsg
 import uesugi.spi.*
 import uesugi.spi.EmptyConfig.plus
 import uesugi.spi.annotation.*
@@ -206,7 +206,7 @@ suspend fun getImage(meta: Meta): ByteArray? {
 
     val result = llm.executeStructured<TagGroup>(
         prompt,
-        LLMProviderChoice.Lite
+        LLMModelChoice.Lite
     )
 
     var tags: List<String>? = null
