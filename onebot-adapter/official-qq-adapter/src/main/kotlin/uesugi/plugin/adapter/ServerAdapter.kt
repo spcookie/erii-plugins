@@ -61,7 +61,7 @@ suspend fun init() {
         val chars = "0123456789".toCharArray()
         while (true) {
             val code = (1..4).map { chars.random() }.joinToString("")
-            if (code !in pendingApprovals) return code
+            if (!pendingApprovals.containsKey(code)) return code
         }
     }
 
