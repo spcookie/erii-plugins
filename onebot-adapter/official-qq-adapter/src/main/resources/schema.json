@@ -1,0 +1,70 @@
+{
+  "__desc__": {
+    "__overall__": "Official QQ OneBot bridge adapter — each top-level key is a bot instance (e.g. bot_1, bot_2), name is customizable",
+    "*.qq": "Official QQ API authentication and gateway config",
+    "*.qq.app-id": "QQ Open Platform Bot App ID",
+    "*.qq.client-secret": "QQ Bot client secret",
+    "*.qq.api-base-url": "QQ Open API base URL",
+    "*.qq.gateway-url": "QQ Gateway WebSocket URL",
+    "*.qq.intents": "Gateway intents bitmask",
+    "*.qq.shard": "Shard config [start, count]",
+    "*.onebot": "OneBot WebSocket server config",
+    "*.onebot.host": "OneBot WS server listen address",
+    "*.onebot.port": "OneBot WS server listen port",
+    "*.onebot.access-token": "OneBot access token (optional)",
+    "*.onebot.self-id": "Bot QQ number",
+    "*.onebot.nickname": "Bot nickname"
+  },
+  "__copy__": [
+    "bot"
+  ],
+  "__value__": {
+    "*.qq.app-id": {
+      "type": "string",
+      "nullable": true
+    },
+    "*.qq.client-secret": {
+      "type": "string",
+      "nullable": true
+    },
+    "*.qq.api-base-url": {
+      "type": "string",
+      "default": "https://api.sgroup.qq.com"
+    },
+    "*.qq.gateway-url": {
+      "type": "string",
+      "default": "wss://api.sgroup.qq.com/websocket/"
+    },
+    "*.qq.intents": {
+      "type": "int",
+      "default": 33554432
+    },
+    "*.qq.shard": {
+      "type": "array",
+      "default": [
+        0,
+        1
+      ]
+    },
+    "*.onebot.host": {
+      "type": "string",
+      "default": "127.0.0.1"
+    },
+    "*.onebot.port": {
+      "type": "int",
+      "default": 6700
+    },
+    "*.onebot.access-token": {
+      "type": "string",
+      "nullable": true
+    },
+    "*.onebot.self-id": {
+      "type": "long",
+      "default": 10000
+    },
+    "*.onebot.nickname": {
+      "type": "string",
+      "default": "official"
+    }
+  }
+}

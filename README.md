@@ -2,18 +2,6 @@
 
 [Erii](https://github.com/spcookie/erii) 的插件集合，基于 PF4J 框架和 `uesugi.erii-plugin` Gradle 插件构建。
 
-## 插件列表
-
-| 插件 | 扩展类型 | 说明 |
-|------|----------|------|
-| **speech** | AgentExtension | MiniMax TTS 语音合成，将文字转为语音发送 |
-| **lolisuki** | RouteExtension | 二次元涩图插件，从 lolisuki.cn 获取图片 |
-| **net-ease-music** | PassiveExtension | 网易云音乐插件，搜索音乐并发送音乐卡片 |
-| **qq-face** | PassiveExtension | QQ 表情匹配，语义分析发送合适的表情 |
-| **seeddream** | RouteExtension | AI 图片生成，支持文生图和图生图 |
-| **rollpig** | AgentExtension | 抽小猪游戏插件 |
-| **animal** | AgentExtension | 虚拟宠物养成，角色扮演与好感度系统 |
-
 ## 构建
 
 ```bash

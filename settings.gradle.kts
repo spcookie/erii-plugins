@@ -15,12 +15,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "erii-plugins"
 
-include("lolisuki")
-include("animal")
-include("chat-heatmap")
-include("net-ease-music")
-include("qq-face")
-include("rollpig")
-include("seeddream")
-include("speech")
-include("chat")
+include("create-image:create-image-seeddream")
+include("tts:tts-minimax")
+include("onebot-adapter:official-qq-adapter")

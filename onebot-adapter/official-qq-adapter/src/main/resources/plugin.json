@@ -1,0 +1,22 @@
+{
+  "bot": {
+    "qq": {
+      "app-id": "${?QQ_BOT_APP_ID}",
+      "client-secret": "${?QQ_BOT_CLIENT_SECRET}",
+      "api-base-url": "https://api.sgroup.qq.com",
+      "gateway-url": "wss://api.sgroup.qq.com/websocket/",
+      "intents": 33554432,
+      "shard": [
+        0,
+        1
+      ]
+    },
+    "onebot": {
+      "host": "127.0.0.1",
+      "port": 6700,
+      "access-token": "${?QQ_BOT_CLIENT_SECRET}",
+      "self-id": 10000,
+      "nickname": "official"
+    }
+  }
+}
