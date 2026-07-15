@@ -2,16 +2,18 @@ plugins {
     id("uesugi.erii-plugin") version "1.0.0" apply false
 }
 
+fun pluginProjects() = subprojects.filter { it.plugins.hasPlugin("uesugi.erii-plugin") }
+
 tasks.register("assembleAllPlugins") {
     description = "Build all subproject plugins and collect into build/plugins/<id>/<id>.zip"
 
-    subprojects.forEach { sub ->
+    pluginProjects().forEach { sub ->
         dependsOn(sub.tasks.named("pluginZip"))
     }
 
     doLast {
         val outputRoot = layout.buildDirectory.dir("plugins").get().asFile
-        subprojects.forEach { sub ->
+        pluginProjects().forEach { sub ->
             val pluginId = sub.name
             val zipTask = sub.tasks.named("pluginZip", Zip::class.java).get()
             val sourceZip = zipTask.archiveFile.get().asFile
@@ -29,13 +31,13 @@ tasks.register("assembleAllPlugins") {
 tasks.register("buildAllPlugins") {
     description = "Build all subproject plugins and collect into build/plugins/<id>.zip"
 
-    subprojects.forEach { sub ->
+    pluginProjects().forEach { sub ->
         dependsOn(sub.tasks.named("pluginZip"))
     }
 
     doLast {
         val outputRoot = layout.buildDirectory.dir("plugins").get().asFile
-        subprojects.forEach { sub ->
+        pluginProjects().forEach { sub ->
             val zipTask = sub.tasks.named("pluginZip", Zip::class.java).get()
             val sourceZip = zipTask.archiveFile.get().asFile
             sourceZip.copyTo(outputRoot.resolve(sourceZip.name), overwrite = true)
