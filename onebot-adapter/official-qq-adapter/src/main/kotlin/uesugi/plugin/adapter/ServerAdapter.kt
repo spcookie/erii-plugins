@@ -6,19 +6,13 @@ import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import com.typesafe.config.ConfigRenderOptions
 import com.typesafe.config.ConfigValueType
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import uesugi.official.qq.onebot.*
 import uesugi.spi.Kv
-import uesugi.spi.annotation.Definition
-import uesugi.spi.annotation.OnLoad
-import uesugi.spi.annotation.useConfig
-import uesugi.spi.annotation.useKv
+import uesugi.spi.annotation.*
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 
@@ -34,6 +28,9 @@ private const val KV_KEY_MEMBERS = "official-qq-adapter.id-map.members"
 private const val KV_KEY_GROUPS = "official-qq-adapter.id-map.groups"
 private const val KV_INIT_PREFIX = "official-qq-adapter.init"
 
+private val lifecycleLock = Any()
+private var adapterState: AdapterState? = null
+
 private data class PendingApproval(
     val type: String,
     val idx: Int,
@@ -42,15 +39,22 @@ private data class PendingApproval(
     val memberOpenid: String,
 )
 
+private data class AdapterState(
+    val runtime: OfficialQqOnebotRuntime,
+    val scope: CoroutineScope,
+)
+
 @OnLoad
 suspend fun init() {
+    stopAdapter()
+
     val kv = useKv()
 
     val config = buildConfig(kv)
     val botSelfIds = extractSelfIds(config)
 
     val membersCache = loadMembersFromKv(kv, botSelfIds)
-    val scope = CoroutineScope(Dispatchers.IO)
+    val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineName("OfficialQqAdapter"))
     val botKeys = botSelfIds.keys.toList()
     val initStates = loadInitStatesFromKv(kv)
     val groupsCache = loadGroupsFromKv(kv, botSelfIds)
@@ -249,7 +253,33 @@ suspend fun init() {
         }
     }
 
-    runOfficialQqOnebot(config, gatewayEventHandler = gatewayEventHandler)
+    runCatching {
+        val runtime = runOfficialQqOnebot(
+            config,
+            gatewayEventHandler = gatewayEventHandler,
+            installShutdownHook = false,
+        )
+        synchronized(lifecycleLock) {
+            adapterState = AdapterState(runtime, scope)
+        }
+    }.onFailure {
+        scope.cancel(CancellationException("official qq adapter failed to start", it))
+        throw it
+    }
+}
+
+@OnUnload
+fun shutdown() {
+    runBlocking { stopAdapter() }
+}
+
+private suspend fun stopAdapter() {
+    val state = synchronized(lifecycleLock) {
+        adapterState.also { adapterState = null }
+    } ?: return
+
+    state.scope.cancel(CancellationException("official qq adapter unloaded"))
+    state.runtime.stop()
 }
 
 private suspend fun buildConfig(kv: Kv): Config {
