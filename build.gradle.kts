@@ -13,6 +13,8 @@ tasks.register("assembleAllPlugins") {
 
     doLast {
         val outputRoot = layout.buildDirectory.dir("plugins").get().asFile
+        outputRoot.deleteRecursively()
+        outputRoot.mkdirs()
         pluginProjects().forEach { sub ->
             val pluginId = sub.name
             val zipTask = sub.tasks.named("pluginZip", Zip::class.java).get()
@@ -37,6 +39,8 @@ tasks.register("buildAllPlugins") {
 
     doLast {
         val outputRoot = layout.buildDirectory.dir("plugins").get().asFile
+        outputRoot.deleteRecursively()
+        outputRoot.mkdirs()
         pluginProjects().forEach { sub ->
             val zipTask = sub.tasks.named("pluginZip", Zip::class.java).get()
             val sourceZip = zipTask.archiveFile.get().asFile
