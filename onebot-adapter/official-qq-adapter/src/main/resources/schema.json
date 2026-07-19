@@ -36,7 +36,7 @@
       "default": "wss://api.sgroup.qq.com/websocket/"
     },
     "*.qq.intents": {
-      "type": "int",
+      "type": "number",
       "default": 33554432
     },
     "*.qq.shard": {
@@ -51,7 +51,7 @@
       "default": "127.0.0.1"
     },
     "*.onebot.port": {
-      "type": "int",
+      "type": "number",
       "default": 6700
     },
     "*.onebot.access-token": {
@@ -59,7 +59,7 @@
       "nullable": true
     },
     "*.onebot.self-id": {
-      "type": "long",
+      "type": "number",
       "default": 10000
     },
     "*.onebot.nickname": {
