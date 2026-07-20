@@ -41,7 +41,7 @@ import uesugi.spi.annotation.*
 import uesugi.spi.sendAgent
 import java.net.URL
 import java.util.*
-import kotlin.time.ExperimentalTime
+import kotlin.time.Duration.Companion.milliseconds
 
 private val log = KotlinLogging.logger {}
 
@@ -279,7 +279,7 @@ suspend fun seeddreamRoute(meta: Meta) {
 @ChatMessage
 @LLMTool(set = "seeddream")
 @LLMDesc("生成一张图片发送")
-suspend fun imageCreate(): String? {
+suspend fun imageCreate(): String {
     val meta = useToolMeta().value
     val resource = generateImage(meta)
     resource.onRight { img ->
@@ -294,7 +294,6 @@ suspend fun imageCreate(): String? {
 
 // ========== Private helpers ==========
 
-@OptIn(ExperimentalTime::class)
 suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
     ensureToken()
 
@@ -359,21 +358,26 @@ suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
         listOf()
     }
 
-    val node: JsonNode = http.post("https://ark.cn-beijing.volces.com/api/v3/images/generations") {
-        contentType(ContentType.Application.Json)
-        bearerAuth(token!!)
-        setBody(
-            mapOf(
-                "model" to useConfig()().getString("model"),
-                "prompt" to request.prompt,
-                "image" to if (images.isEmpty()) null else if (images.size == 1) images[0] else images,
-                "response_format" to "url",
-                "size" to "2K",
-                "stream" to false,
-                "watermark" to false
-            )
-        )
-    }.body()
+    val requestBody = mapOf(
+        "model" to useConfig()().getString("model"),
+        "prompt" to request.prompt,
+        "image" to if (images.isEmpty()) null else if (images.size == 1) images[0] else images,
+        "response_format" to "url",
+        "size" to "2K",
+        "stream" to false,
+        "watermark" to false
+    )
+
+    val node: JsonNode = retryWithBackoff(3) {
+        http.post("https://ark.cn-beijing.volces.com/api/v3/images/generations") {
+            contentType(ContentType.Application.Json)
+            bearerAuth(token!!)
+            header("Accept", "application/json")
+            header("User-Agent", "Erii/1.0")
+            header("Connection", "close")
+            setBody(requestBody)
+        }.body()
+    }
 
     if (node.has("error")) {
         log.warn { "SeedDream Error: $node" }
@@ -388,15 +392,32 @@ suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
     if (url == null) {
         return "No URL returned by SeedDream".left()
     }
-    val connection = URL(url).openConnection()
+    val connection = withContext(Dispatchers.IO) {
+        URL(url).openConnection()
+    }
         .apply {
             connectTimeout = 20_000
             readTimeout = 60_000
         }
-    return connection.getInputStream()
+    return withContext(Dispatchers.IO) {
+        connection.getInputStream()
+    }
         .use { input ->
             input.readBytes().right()
         }
+}
+
+
+private suspend fun <T> retryWithBackoff(maxAttempts: Int, block: suspend () -> T): T {
+    repeat(maxAttempts - 1) { attempt ->
+        try {
+            return block()
+        } catch (e: Exception) {
+            log.warn { "SeedDream HTTP call failed (attempt ${attempt + 1}): ${e.message}" }
+            delay((1000L * (attempt + 1)).milliseconds)
+        }
+    }
+    return block()
 }
 
 private fun getMimeType(fileName: String): String {
