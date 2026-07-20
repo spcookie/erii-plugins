@@ -364,7 +364,7 @@ suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
         bearerAuth(token!!)
         setBody(
             mapOf(
-                "model" to "doubao-seedream-4-5-251128",
+                "model" to useConfig()().getString("model"),
                 "prompt" to request.prompt,
                 "image" to if (images.isEmpty()) null else if (images.size == 1) images[0] else images,
                 "response_format" to "url",

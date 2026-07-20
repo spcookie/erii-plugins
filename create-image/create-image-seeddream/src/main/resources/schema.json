@@ -1,12 +1,17 @@
 {
   "__desc__": {
     "__overall__": "SeedDream plugin",
-    "token": "SeedDream API token"
+    "token": "SeedDream API token",
+    "model": "SeedDream model name"
   },
   "__value__": {
     "token": {
       "type": "string",
       "default": ""
+    },
+    "model": {
+      "type": "string",
+      "default": "doubao-seedream-4-5-251128"
     }
   }
 }
