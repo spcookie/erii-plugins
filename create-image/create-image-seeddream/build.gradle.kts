@@ -3,3 +3,7 @@ plugins {
 }
 
 version = "1.0.0"
+
+dependencies {
+    testImplementation(kotlin("test"))
+}

@@ -2,9 +2,6 @@
 
 package uesugi.plugin
 
-import ai.koog.agents.core.tools.annotations.LLMDescription
-import ai.koog.agents.core.tools.annotations.Tool
-import ai.koog.agents.core.tools.reflect.ToolSet
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.executeStructured
 import ai.koog.prompt.params.LLMParams
@@ -16,8 +13,9 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.http.*
-import kotlinx.atomicfu.atomic
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
@@ -25,18 +23,13 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import uesugi.common.ChatMessage
-import uesugi.common.ChatToolSet
 import uesugi.common.LLMModelChoice
 import uesugi.common.data.HistoryTable
 import uesugi.common.data.MessageType
 import uesugi.common.data.ResourceTable
-import uesugi.common.event.PSFeature
 import uesugi.onebot.core.message.buildMessage
 import uesugi.onebot.sdk.client.api.sendGroupMsg
-import uesugi.spi.EmptyConfig.plus
-import uesugi.spi.Feature
 import uesugi.spi.Meta
-import uesugi.spi.ToolSetBuilder
 import uesugi.spi.annotation.*
 import uesugi.spi.sendAgent
 import java.net.URL
@@ -77,127 +70,13 @@ private const val IMAGE_CREATE_MATCHER = """
         总结：只要感觉用户是把 AI 当作【画师/生成器】使用，就选此项。
     """
 
-private val IMAGE_TASK_AGGREGATOR_PROMPT = """
-        你是一个"群聊图片生成任务聚合器"。
-
-        你的职责是：
-        你不负责生成图片。
-        从提供的群聊记录中，提取当前针对图片生成或图片修改的最终有效指令，
-        并转换为图像模型可直接调用的结构化参数。
-
-        你将收到：
-
-        1. 群聊记录（按时间升序排列）
-        2. 机器人、用户历史图片列表（有id）
-
-        # 一、你的目标
-
-        你必须完成以下事情：
-
-        1. 判断是否为图片生成任务
-        2. 聚合最终有效提示词
-        3. 判断任务类型
-        4. 提取使用到的图片ID
-        5. 输出严格JSON结构
-
-        # 二、图片生成任务识别规则
-
-        作用域收敛规则:
-
-        - 只分析"最后一次涉及图片任务的对话块"。
-        - 忽略闲聊和无关插话。
-        - 若存在多条修改指令，以最后一个有效修改为准。
-        - 若连续多轮修改同一张图片，必须整合全部有效修改。
-
-        当满足以下任一条件时，判定为图片生成任务：
-
-        - 出现 "生成一张"、"画一张"、"做一张"、"帮我生成"、"根据图片生成"
-        - 出现 "改成"、"变成"、"去掉"、"替换"、"编辑"
-        - 明确 @机器人 并伴随图像生成相关描述
-        - 出现图片引用 [image id=x] 并伴随生成/修改描述
-        - 出现"根据上述图片"、"根据这张图"、"参考图片"等指代
-
-        否则判定为非图片任务。
-
-        # 三、任务类型判断规则
-
-        ## 1. 文生图 (text_to_image)
-
-        满足：
-        - 仅有文本描述
-        - 未使用任何图片ID
-        - 或文本内容不依赖图片
-
-        ## 2. 图生图 - 参考图生成 (image_to_image_reference)
-
-        满足：
-        - 使用图片作为参考
-        - 表述为"根据图片生成…"
-        - 没有修改原图内容
-        - 是基于图进行延展生成新图
-
-        ## 3. 图生图 - 图片编辑 (image_edit)
-
-        满足：
-        - 明确要修改某张图片
-        - 表述为"改成"、"把…换成"、"去掉背景"、"修改"
-        - 对原图内容进行直接编辑
-
-        # 四、图片ID提取规则
-
-        必须严格遵守：
-
-        1. 只提取用户发送的图片
-        2. 机器人生成的图片不得作为输入图片
-        3. 若用户说"上述图片"、"根据图片"，指代最近一张用户图片
-        4. 若用户重复指令但未新增图片，不重复添加
-        5. 若用户新增图片，使用最新图片
-        6. 只使用任务发起前出现的图片
-
-        # 五、多轮聚合规则
-
-        1. 若文本一致但图片不同 → 使用最新图片
-        2. 若文本补充说明 → 合并为最终提示词
-        3. 若无新增信息 → 忽略重复
-
-        # 六、提示词处理规则
-
-        1. 保留用户原始表达语义
-        2. 解析指代词
-        3. 不添加艺术风格
-        4. 不扩展细节
-        5. 不润色
-        6. 仅做语义消歧与完整化
-
-        # 七、输出格式（必须严格输出JSON）
-
-        你必须只输出以下结构，不得输出额外解释：
-
-        {
-          "taskType": "TEXT_TO_IMAGE | IMAGE_TO_IMAGE_REFERENCE | IMAGE_EDIT",
-          "prompt": "最终用于生成图片的完整提示词",
-          "imageIds": ["ID1","ID2"],
-          "confidence": 0.0
-        }
-
-        字段说明：
-
-        - taskType：三选一
-        - prompt：最终聚合后的提示词
-        - imageIds：字符串数组
-        - confidence：0~1之间的小数
-
-        如果不是图片任务，输出：
-
-        {
-          "taskType": null,
-          "prompt": null,
-          "imageIds": [],
-          "confidence": 0.0
-        }
-
-        严格执行规则。
-        不得输出除JSON以外的任何内容。
+private val IMAGE_COUNT_PROMPT = """
+        你负责判断用户希望一次生成多少张图片。
+        只根据用户最新一条提示词判断，返回 1 到 4 之间的整数：
+        - 用户明确要求数量时，按要求返回，但最多为 4。
+        - 用户使用“多张”“几张”“一组”等未明确数量的表达时，返回 4。
+        - 用户未表达多图意图时，返回 1。
+        只输出结构化结果中的 imageCount 字段，不要改写或扩展提示词。
     """.trimIndent()
 
 private var token: String? = null
@@ -211,90 +90,39 @@ private suspend fun ensureToken() {
 
 // ========== Route handler ==========
 
-@OptIn(DelicateCoroutinesApi::class)
 @Route(
     key = "IMAGE_CREATE",
     desc = IMAGE_CREATE_MATCHER,
     toolSets = ["seeddream"]
 )
 suspend fun seeddreamRoute(meta: Meta) {
-    val resource = coroutineScope {
-        async { generateImage(meta) }
-    }.await()
-
-    val state = atomic(false)
-
-    fun send() {
-        if (!state.value) {
-            state.value = true
-            GlobalScope.launch {
-                resource.onRight { img ->
-                    log.info { "由于图片未使用 Agent Tool 发送，尝试直接发送" }
-                    val base64 = Base64.getEncoder().encodeToString(img)
-                    meta.roledBot.refBot.sendGroupMsg(
-                        meta.groupId.toLong(),
-                        buildMessage { image("base64://$base64") }
-                    )
-                }.onLeft { log.warn { "未获取到图片，直接发送失败" } }
-            }
+    generateImage(meta)
+        .onLeft { error ->
+            log.warn { "生成图片失败: $error" }
+            meta.sendAgent("生成图片失败，请直接告诉用户失败原因。错误: $error")
         }
-    }
-
-    val toolSet = { _: ChatToolSet ->
-        object : ToolSet {
-            @LLMDescription("发送图片")
-            @Tool
-            fun sendImage(): String? {
-                state.value = true
-                GlobalScope.launch {
-                    resource.onRight { img ->
-                        val base64 = Base64.getEncoder().encodeToString(img)
-                        meta.roledBot.refBot.sendGroupMsg(
-                            meta.groupId.toLong(),
-                            buildMessage { image("base64://$base64") }
-                        )
-                    }.onLeft { log.warn { "未获取到图片，发送失败" } }
-                }
-                return null
-            }
+        .onRight { images ->
+            sendImages(meta, images)
         }
-    }
-
-    meta.sendAgent(
-        input = resource.fold(
-            { error -> "生成图片失败，调用 Tool 发送消息告诉用户生成失败，错误: $error" },
-            { _ -> "你已经生成了一张图片，必须调用 `imageCreate` Tool 发送生成图片。" }
-        ),
-        ToolSetBuilder { tool(toolSet) } + Feature(PSFeature.GRAB or PSFeature.FALLBACK)
-    ) {
-        runCompletion { send() }
-        callFallback { send() }
-        callCompletion { send() }
-        GlobalScope
-    }
 }
 
 // ========== Tool ==========
 
 @ChatMessage
 @LLMTool(set = "seeddream")
-@LLMDesc("生成一张图片发送")
-suspend fun imageCreate(): String {
+@LLMDesc("生成图片并发送")
+suspend fun imageCreateSend(): String {
     val meta = useToolMeta().value
     val resource = generateImage(meta)
-    resource.onRight { img ->
-        val base64 = Base64.getEncoder().encodeToString(img)
-        meta.roledBot.refBot.sendGroupMsg(
-            meta.groupId.toLong(),
-            buildMessage { image("base64://$base64") }
-        )
+    resource.onRight { images ->
+        sendImages(meta, images)
     }
     return "ok"
 }
 
 // ========== Private helpers ==========
 
-suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
+suspend fun generateImage(meta: Meta): Either<String, List<ByteArray>> {
     ensureToken()
 
     val database = useDatabase()
@@ -307,66 +135,51 @@ suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
                 HistoryTable.groupId eq meta.groupId and
                         (HistoryTable.userId inList listOf(meta.senderId!!, meta.botId))
             }
-            .orderBy(HistoryTable.createdAt to SortOrder.DESC)
-            .limit(14)
-    }.reversed()
-
-    val prompt = records.mapIndexedNotNull { index, record ->
-        val role = if (record.userId == meta.senderId) "User: " else "AI: "
-        when (record.messageType) {
-            MessageType.TEXT -> {
-                "$role${record.content}"
-            }
-
-            MessageType.IMAGE -> {
-                "$role[image id=${index}]"
-            }
-
-            else -> {
-                null
-            }
-        }
-    }.joinToString("\n\n")
-
-    val promt = prompt("seed_dream_prompt", LLMParams(maxTokens = 65536)) {
-        system(IMAGE_TASK_AGGREGATOR_PROMPT)
-        user(prompt)
+            .orderBy(
+                HistoryTable.createdAt to SortOrder.DESC,
+                HistoryTable.id to SortOrder.DESC
+            )
+            .limit(4)
     }
 
-    val result = llm.executeStructured<SeedDreamRequest>(promt, LLMModelChoice.Pro)
+    val latestRecord = records.firstOrNull()
+        ?: return "No history found for SeedDream".left()
+    val latestPrompt = latestRecord.content?.takeIf { it.isNotBlank() }
+        ?: return "Latest history has no prompt".left()
 
-    val request = result.getOrThrow().data
-
-    log.debug { "SeedDream Request: $request" }
-
-    val images = if (request.taskType != SeedDreamType.TEXT_TO_IMAGE) {
-        records.filterIndexed { index, record ->
-            record.messageType == MessageType.IMAGE && request.imageIds?.contains(index) ?: false
-        }
-            .mapNotNull {
-                it.resource?.let { resource ->
-                    resource.bytes ?: return@mapNotNull null
-                    Pair(resource.bytes, resource.fileName)
-                } ?: return@mapNotNull null
-            }
-            .map { (bytes, fileName) ->
-                val base64 = Base64.getEncoder().encodeToString(bytes!!)
-                val mimeType = getMimeType(fileName)
-                "data:$mimeType;base64,$base64"
-            }
-    } else {
-        listOf()
+    val countPrompt = prompt("seed_dream_image_count", LLMParams(maxTokens = 64)) {
+        system(IMAGE_COUNT_PROMPT)
+        user(latestPrompt)
     }
 
-    val requestBody = mapOf(
-        "model" to useConfig()().getString("model"),
-        "prompt" to request.prompt,
-        "image" to if (images.isEmpty()) null else if (images.size == 1) images[0] else images,
-        "response_format" to "url",
-        "size" to "2K",
-        "stream" to false,
-        "watermark" to false
+    val imageCount = llm.executeStructured<SeedDreamImageCount>(countPrompt, LLMModelChoice.Pro)
+        .getOrThrow()
+        .data
+        .imageCount
+        .coerceIn(1, 4)
+
+    val referenceRecords = selectContiguousReferences(records) {
+        it.messageType == MessageType.IMAGE
+    }
+
+    val images = referenceRecords.mapNotNull { record ->
+        val resource = record.resource ?: return@mapNotNull null
+        val bytes = resource.bytes ?: return@mapNotNull null
+        val base64 = Base64.getEncoder().encodeToString(bytes)
+        val mimeType = getMimeType(resource.fileName)
+        "data:$mimeType;base64,$base64"
+    }
+
+    val requestBody = buildSeedDreamRequestBody(
+        model = useConfig()().getString("model"),
+        prompt = latestPrompt,
+        images = images,
+        imageCount = imageCount
     )
+
+    log.debug {
+        "SeedDream Request: prompt=$latestPrompt, referenceImages=${images.size}, imageCount=$imageCount"
+    }
 
     val node: JsonNode = retryWithBackoff(3) {
         http.post("https://ark.cn-beijing.volces.com/api/v3/images/generations") {
@@ -384,14 +197,18 @@ suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
         return node.toString().left()
     }
 
-    val url: String? = node.path("data")
-        .path(0)
-        .path("url")
-        .textValue()
+    val urls = node.path("data")
+        .mapNotNull { it.path("url").textValue() }
 
-    if (url == null) {
+    if (urls.isEmpty()) {
         return "No URL returned by SeedDream".left()
     }
+
+    val generatedImages = urls.map { downloadImage(it) }
+    return generatedImages.right()
+}
+
+private suspend fun downloadImage(url: String): ByteArray {
     val connection = withContext(Dispatchers.IO) {
         URL(url).openConnection()
     }
@@ -403,8 +220,18 @@ suspend fun generateImage(meta: Meta): Either<String, ByteArray> {
         connection.getInputStream()
     }
         .use { input ->
-            input.readBytes().right()
+            input.readBytes()
         }
+}
+
+private suspend fun sendImages(meta: Meta, images: List<ByteArray>) {
+    images.forEach { imageBytes ->
+        val base64 = Base64.getEncoder().encodeToString(imageBytes)
+        meta.roledBot.refBot.sendGroupMsg(
+            meta.groupId.toLong(),
+            buildMessage { image("base64://$base64") }
+        )
+    }
 }
 
 
@@ -431,16 +258,4 @@ private fun getMimeType(fileName: String): String {
 // ========== Data classes ==========
 
 @Serializable
-data class SeedDreamRequest(
-    var taskType: SeedDreamType,
-    var prompt: String,
-    var imageIds: List<Int>? = null,
-    var confidence: Float = 0.0f
-)
-
-@Suppress("unused")
-enum class SeedDreamType {
-    TEXT_TO_IMAGE,
-    IMAGE_TO_IMAGE_REFERENCE,
-    IMAGE_EDIT
-}
+data class SeedDreamImageCount(val imageCount: Int)
